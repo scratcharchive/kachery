@@ -1,0 +1,20 @@
+{
+    "name": "kachery",
+    "version": "0.1.0",
+    "description": "Share data for scientific research",
+    "type": "module",
+    "scripts": {
+      "test": "echo \"No tests\" && exit 0",
+      "start": "node --experimental-modules server/main.js"
+    },
+    "keywords": [],
+    "author": "Jeremy Magland",
+    "license": "Apache-2.0",
+    "homepage": "https://github.com/flatironinstitute/kachery",
+    "main": "server/main.js",
+    "dependencies": {
+      "express": "^4.16.3"
+    },
+    "bin": {}
+  }
+  

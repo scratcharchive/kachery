@@ -1,0 +1,54 @@
+{
+    "channels": [
+        {
+            "name": "name-of-channel",
+            "password": "password-of-channel",
+            "downloadQuotas": [
+                {
+                    "name": "small",
+                    "maxFileSize": 1e6,
+                    "maxSimultaneous": 2,
+                    "maxNumFilesPerDay": 10000,
+                    "maxNumBytesPerDay": 1e9
+                },
+                {
+                    "name": "medium",
+                    "maxSimultaneous": 2,
+                    "maxFileSize": 100e6,
+                    "maxNumFilesPerDay": 10000,
+                    "maxNumBytesPerDay": 1e9
+                },
+                {
+                    "name": "large",
+                    "maxFileSize": 100e9,
+                    "maxSimultaneous": 2,
+                    "maxNumFilesPerDay": 10000,
+                    "maxNumBytesPerDay": 100e9
+                }
+            ],
+            "uploadQuotas": [
+                {
+                    "name": "small",
+                    "maxFileSize": 1e6,
+                    "maxSimultaneous": 2,
+                    "maxNumFilesPerDay": 10000,
+                    "maxNumBytesPerDay": 1e9
+                },
+                {
+                    "name": "medium",
+                    "maxFileSize": 100e6,
+                    "maxSimultaneous": 2,
+                    "maxNumFilesPerDay": 10000,
+                    "maxNumBytesPerDay": 1e9
+                },
+                {
+                    "name": "large",
+                    "maxFileSize": 100e9,
+                    "maxSimultaneous": 2,
+                    "maxNumFilesPerDay": 10000,
+                    "maxNumBytesPerDay": 100e9
+                }
+            ]
+        }
+    ]
+}
