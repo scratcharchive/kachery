@@ -1,0 +1,31 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import argparse
+import time
+import subprocess
+
+def main():
+    old_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
+    parser = argparse.ArgumentParser(description='Host a kachery server (requires prior installation using yarn)')
+    parser.add_argument('storage_dir', help='Path to kachery storage directory which must already have a kachery.json file')
+    parser.add_argument('--port', help='The port to listen on', required=True)
+
+    args = parser.parse_args()
+
+    script_path = os.path.dirname(os.path.realpath(__file__))
+
+    my_env = os.environ.copy()
+    my_env["KACHERY_STORAGE_DIR"] = os.path.abspath(args.storage_dir)
+    my_env["PORT"] = '{}'.format(args.port)
+    p = subprocess.Popen(['yarn', 'start'], env=my_env, cwd=script_path + '/../server')
+    try:
+        p.wait()
+    finally:
+        p.terminate()
+
+if __name__ == "__main__":
+    main()

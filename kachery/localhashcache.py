@@ -3,27 +3,36 @@ import os
 import shutil
 import hashlib
 from shutil import copyfile
-from .steady_download_and_compute_sha1 import steady_download_and_compute_sha1
+from .steady_download_and_compute_hash import steady_download_and_compute_hash
 import random
 import time
 from .filelock import FileLock
 import mtlogging
 from typing import Optional, List, Any, Dict, Tuple, Union
 
-# TODO: implement cleanup() for Sha1Cache
+# TODO: implement cleanup() for LocalHashCache
 # removing .record.json and .hints.json files that are no longer relevant
 
 
-class Sha1Cache():
-    def __init__(self):
+class LocalHashCache:
+    def __init__(self, *, algorithm):
         self._directory = None
+        self._algorithm = algorithm
         self._alternate_directories = None
 
     def directory(self) -> str:
         if self._directory:
             return self._directory
         else:
-            return os.getenv('SHA1_CACHE_DIR', os.getenv('KBUCKET_CACHE_DIR', '/tmp/sha1-cache'))
+            if 'KACHERY_CACHE_DIR' in os.environ:
+                return os.path.join(os.getenv('KACHERY_CACHE_DIR'), '{}-cache'.format(self._algorithm))
+            else:
+                if self._algorithm == 'sha1':
+                    return os.getenv('SHA1_CACHE_DIR', os.getenv('KBUCKET_CACHE_DIR', '/tmp/sha1-cache'))
+                elif self._algorithm == 'md5':
+                    return os.getenv('MD5_CACHE_DIR', '/tmp/md5-cache')
+                else:
+                    raise Exception('Unexpected algorithm: {}'.format(self._algorithm))
 
     def alternateDirectories(self) -> List[str]:
         if self._alternate_directories:
@@ -41,9 +50,9 @@ class Sha1Cache():
     def setAlternateDirectories(self, directories: List[str]) -> None:
         self._alternate_directories = directories
 
-    def findFile(self, sha1: str) -> Optional[str]:
+    def findFile(self, hash: str) -> Optional[str]:
         path, alternate_paths = self._get_path_ext(
-            sha1, create=False, return_alternates=True)
+            hash=hash, create=False, return_alternates=True)
         # if file is available return it
         if os.path.exists(path):
             return path
@@ -80,10 +89,10 @@ class Sha1Cache():
                 _safe_remove_file(hints_fname)
         return None
 
-    def downloadFile(self, url: str, sha1: str, target_path: Optional[str]=None, size: Optional[int]=None, verbose: bool=False, show_progress: bool=False) -> Optional[str]:
+    def downloadFile(self, url: str, hash: str, target_path: Optional[str]=None, size: Optional[int]=None, verbose: bool=False, show_progress: bool=False) -> Optional[str]:
         alternate_target_path = False
         if target_path is None:
-            target_path = self._get_path(sha1, create=True)
+            target_path = self._get_path(hash=hash, create=True)
         else:
             alternate_target_path = True
 
@@ -93,7 +102,7 @@ class Sha1Cache():
                 'Downloading file --- ({}): {} -> {}'.format(_format_file_size(size), url, target_path))
 
         timer = time.time()
-        sha1b = steady_download_and_compute_sha1(url=url, target_path=path_tmp)
+        hash_b = steady_download_and_compute_hash(url=url, algorithm=self._algorithm, target_path=path_tmp)
         elapsed = time.time() - timer
 
         size_b = os.path.getsize(path_tmp)
@@ -103,15 +112,15 @@ class Sha1Cache():
                 _safe_remove_file(path_tmp)
                 raise Exception(
                     'size of downloaded file does not match expected {} {} <> {}'.format(url, size_b, size))
-        if sha1b != sha1:
+        if hash_b != hash:
             _safe_remove_file(path_tmp)
             raise Exception(
-                'sha1 of downloaded file does not match expected {} {} <> {}'.format(url, sha1b, sha1))
+                'hash of downloaded file does not match expected {} {} <> {}'.format(url, hash_b, hash))
         if alternate_target_path:
             if os.path.exists(target_path):
                 _safe_remove_file(target_path)
             _rename_file(path_tmp, target_path, remove_if_exists=True)
-            self.reportFileSha1(target_path, sha1)
+            self.reportFileHash(target_path, hash=hash)
         else:
             if not os.path.exists(target_path):
                 _rename_file(path_tmp, target_path, remove_if_exists=False)
@@ -124,8 +133,9 @@ class Sha1Cache():
         return target_path
 
     def moveFileToCache(self, path: str) -> str:
-        sha1 = self.computeFileSha1(path)
-        path0 = self._get_path(sha1, create=True)
+        hash0 = self.computeFileHash(path)
+        assert hash0 is not None
+        path0 = self._get_path(hash0, create=True)
         if os.path.exists(path0):
             if path != path0:
                 _safe_remove_file(path)
@@ -138,81 +148,82 @@ class Sha1Cache():
 
     @mtlogging.log()
     def copyFileToCache(self, path: str) -> Tuple[str, str]:
-        sha1 = self.computeFileSha1(path)
-        path0 = self._get_path(sha1, create=True)
+        hash0 = self.computeFileHash(path)
+        assert hash0 is not None
+        path0 = self._get_path(hash0, create=True)
         if not os.path.exists(path0):
             tmp_path = path0 + '.copying.' + _random_string(6)
             copyfile(path, tmp_path)
             _rename_file(tmp_path, path0, remove_if_exists=False)
-        return path0, sha1
+        return path0, hash0
 
-    @mtlogging.log()
-    def computeFileSha1(self, path: str, _known_sha1: str = None, _cache_only: bool = False) -> Optional[str]:
+    # @mtlogging.log()
+    def computeFileHash(self, path: str, _known_hash: str = None, _cache_only: bool = False) -> Optional[str]:
         path = os.path.abspath(path)
         basename = os.path.basename(path)
-        if len(basename) == 40:
+        if len(basename) == _length_of_hash_for_algorithm(self._algorithm):
             # suspect it is itself a file in the cache
-            if self._get_path(sha1=basename) == path:
+            if self._get_path(hash=basename) == path:
                 # in that case we don't need to compute
                 return basename
 
         aa = _get_stat_object(path)
-        aa_hash = _compute_string_sha1(json.dumps(aa, sort_keys=True))
+        aa_sha1 = _compute_string_sha1(json.dumps(aa, sort_keys=True))
 
-        path0 = self._get_path(aa_hash, create=True) + '.record.json'
-        if not _known_sha1:
+        path0 = self._get_path(aa_sha1, create=True) + '.record.json'
+        if not _known_hash:
             if os.path.exists(path0):
                 obj = _read_json_file(path0, delete_on_error=True)
                 if obj:
                     bb = obj['stat']
                     if _stat_objects_match(aa, bb):
-                        if obj.get('sha1', None):
-                            return obj['sha1']
+                        if obj.get(self._algorithm, None):
+                            return obj[self._algorithm]
 
-        if _known_sha1 is None:
+        if _known_hash is None:
             if _cache_only:
                 return None
-            sha1 = _compute_file_sha1(path)
+            hash1 = _compute_file_hash(path, algorithm=self._algorithm)
         else:
-            sha1 = _known_sha1
+            hash1 = _known_hash
 
-        if not sha1:
+        if not hash1:
             return None
 
         obj = dict(
-            sha1=sha1,
             stat=aa
         )
+        obj[self._algorithm] = hash1
         try:
             _write_json_file(obj, path0)
         except:
             print('Warning: problem writing .record.json file: ' + path0)
 
-        path1 = self._get_path(sha1, create=True, directory=self.directory()) + '.hints.json'
+        path1 = self._get_path(hash=hash1, create=True, directory=self.directory()) + '.hints.json'
         if os.path.exists(path1):
             hints = _read_json_file(path1, delete_on_error=True)
         else:
             hints = None
         if not hints:
-            hints = {'files': []}
+            hints = dict(files=[])
         hints['files'].append(obj)
         try:
             _write_json_file(hints, path1)
         except:
             print('Warning: problem writing .hints.json file: ' + path1)
         # todo: use hints for findFile
-        return sha1
+        return hash1
 
-    def reportFileSha1(self, path: str, sha1: str) -> None:
-        self.computeFileSha1(path, _known_sha1=sha1)
+    def reportFileHash(self, path: str, hash: str) -> None:
+        self.computeFileHash(path, _known_hash=hash)
 
-    def _get_path(self, sha1: str, *, create: bool=True, directory: Optional[str]=None) -> str:
-        return str(self._get_path_ext(sha1, create=create, directory=directory, return_alternates=False))
+    def _get_path(self, hash: str, *, create: bool=True, directory: Optional[str]=None) -> str:
+        return str(self._get_path_ext(hash=hash, create=create, directory=directory, return_alternates=False))
 
-    def _get_path_ext(self, sha1: str, *, create: bool=True, directory: Optional[str]=None, return_alternates: bool=False) -> Union[str, Tuple[str, List[str]]]:
+    def _get_path_ext(self, hash: str, *, create: bool=True, directory: Optional[str]=None, return_alternates: bool=False) -> Union[str, Tuple[str, List[str]]]:
         if not directory:
             directory = self.directory()
-        path1 = os.path.join(sha1[0], sha1[1:3])
+        path1 = os.path.join(hash[0], hash[1:3])
         path0 = os.path.join(str(directory), path1)
         if create:
             if not os.path.exists(path0):
@@ -222,29 +233,29 @@ class Sha1Cache():
                     if not os.path.exists(path0):
                         raise Exception('Unable to make directory: ' + path0)
         if not return_alternates:
-            return os.path.join(path0, sha1)
+            return os.path.join(path0, hash)
         else:
             altpaths = []
             alt_dirs = self.alternateDirectories()
             for altdir in alt_dirs:
-                altpaths.append(os.path.join(altdir, path1, sha1))
-            return os.path.join(path0, sha1), altpaths
+                altpaths.append(os.path.join(altdir, path1, hash))
+            return os.path.join(path0, hash), altpaths
 
 
 @mtlogging.log()
-def _compute_file_sha1(path: str) -> Optional[str]:
+def _compute_file_hash(path: str, algorithm: str) -> Optional[str]:
     if not os.path.exists(path):
         return None
     if (os.path.getsize(path) > 1024 * 1024 * 100):
-        print('Computing sha1 of {}'.format(path))
+        print('Computing {} of {}'.format(algorithm, path))
     BLOCKSIZE = 65536
-    sha = hashlib.sha1()
+    hashsum = getattr(hashlib, algorithm)()
     with open(path, 'rb') as file:
         buf = file.read(BLOCKSIZE)
         while len(buf) > 0:
-            sha.update(buf)
+            hashsum.update(buf)
             buf = file.read(BLOCKSIZE)
-    return sha.hexdigest()
+    return hashsum.hexdigest()
 
 
 def _get_stat_object(fname: str) -> Optional[Dict]:
@@ -365,3 +376,11 @@ def _sizeof_fmt(num: int, suffix='B') -> str:
 def _random_string(num_chars: int) -> str:
     chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     return ''.join(random.choice(chars) for _ in range(num_chars))
+
+def _length_of_hash_for_algorithm(algorithm):
+    if algorithm == 'sha1':
+        return 40
+    elif algorithm == 'md5':
+        return 32
+    else:
+        raise Exception('Unexpected algorithm: {}'.format(algorithm))

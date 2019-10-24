@@ -3,23 +3,22 @@ import fs from 'fs';
 
 
 export default class UploadHandler {
-    constructor(sha1Cache) {
-        this._sha1Cache = sha1Cache;
+    constructor(hashCache) {
+        this._hashCache = hashCache;
         this._uploadJob = null;
         this._writeStream = null;
-        this._shasum = null;
+        this._computedHash = null;
     }
-    async handleUpload(sha1, fileSize, req, res) {
-        this._sha1 = sha1;
+    async handleUpload(hash, fileSize, req, res) {
+        this._hash = hash;
         this._fileSize = fileSize;
         this._req = req;
         this._res = res;
-        let result = await this._sha1Cache.findFileForSha1(sha1, {returnRelPath: true});
-        this._tmpFileName = await this._sha1Cache.makeTemporaryUploadFile(sha1);
+        this._tmpFileName = await this._hashCache.makeTemporaryUploadFile(hash);
         this._writeStream = fs.createWriteStream(this._tmpFileName);
-        this._shasum = crypto.createHash('sha1');
+        this._computedHash = crypto.createHash(this._hashCache.algorithm());
         await this._handleUploadToTmpFile();
-        await this._sha1Cache.moveTemporaryFileIntoPlace(sha1, this._tmpFileName);
+        await this._hashCache.moveTemporaryFileIntoPlace(hash, this._tmpFileName);
     }
     _handleUploadToTmpFile() {
         return new Promise((resolve, reject) => {
@@ -46,9 +45,9 @@ export default class UploadHandler {
                     doReject(new Error(`Incorrect num bytes processed: ${numBytesProcessed} <> ${this._fileSize}`));
                     return;
                 }
-                let computedSha1 = this._shasum.digest('hex');
-                if (computedSha1 != this._sha1) {
-                    doReject(new Error(`Computed sha1 does not match expected: ${computedSha1} <> ${this._sha1}`));
+                let computedHash = this._computedHash.digest('hex');
+                if (computedHash != this._hash) {
+                    doReject(new Error(`Computed hash does not match expected: ${computedHash} <> ${this._hash}`));
                     return;
                 }
                 done = true;
@@ -62,7 +61,7 @@ export default class UploadHandler {
                     doReject(new Error(`Too many bytes processed: ${numBytesProcessed} > ${this._fileSize}. Aborting.`));
                     return;
                 }
-                this._shasum.update(chunk);
+                this._computedHash.update(chunk);
             }
             this._req.on('data', (chunk) => {
                 // hmmm, will all chunks get processed before

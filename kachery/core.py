@@ -8,23 +8,29 @@ import tempfile
 import time
 import requests
 import urllib.request as request
-from .sha1cache import Sha1Cache
+import shutil
+from .localhashcache import LocalHashCache
 
 _global_config=dict(
     url=os.getenv('KACHERY_URL', None),
     channel=os.getenv('KACHERY_CHANNEL', None),
     password=os.getenv('KACHERY_PASSWORD', None),
+    algorithm='sha1',
     use_remote=False,
     use_remote_only=False
 )
 
-_sha1_cache = Sha1Cache()
+_hash_caches = dict(
+    sha1=LocalHashCache(algorithm='sha1'),
+    md5=LocalHashCache(algorithm='md5')
+)
 
 def set_config(*,
         use_remote: Union[bool, None]=None,
         use_remote_only: Union[bool, None]=None,
         channel: Union[str, None]=None,
         password: Union[str, None]=None,
+        algorithm: Union[str, None]=None,
         url: Union[str, None]=None
 ) -> None:
     if use_remote is not None:
@@ -35,6 +41,8 @@ def set_config(*,
         _global_config['channel'] = channel
     if password is not None:
         _global_config['password'] = password
+    if algorithm is not None:
+        _global_config['algorithm'] = algorithm
     if url is not None:
         _global_config['url'] = url
 
@@ -52,24 +60,38 @@ def _load_config(**kwargs) -> dict:
         ret[key] = val
     return ret
 
-def load_file(path: str, **kwargs)-> Union[str, None]:
+def _is_hash_url(path):
+    algs = ['sha1', 'md5']
+    for alg in algs:
+        if path.startswith(alg + '://') or path.startswith(alg + 'dir://'):
+            return True
+    return False
+
+def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
-    if path.startswith('sha1://') or path.startswith('sha1dir://'):
+    if _is_hash_url(path):
         if not config['use_remote_only']:
             ret = _find_file_locally(path, config=config)
             if ret:
+                if dest:
+                    shutil.copyfile(ret, dest)
+                    return dest
                 return ret
         if config['use_remote'] or config['use_remote_only']:
-            url0, sha1, size0 = _check_remote_file(path, config=config)
+            url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if url0:
-                assert sha1 is not None
+                assert algorithm is not None
+                assert hash0 is not None
                 assert size0 is not None
-                return _sha1_cache.downloadFile(url=url0, sha1=sha1, size=size0)
+                return _hash_caches[algorithm].downloadFile(url=url0, hash=hash0, size=size0, target_path=dest)
             else:
                 return None
         return None
     else:
         if os.path.isfile(path):
+            if dest:
+                shutil.copyfile(path, dest)
+                return dest
             return path
         else:
             return None
@@ -98,14 +120,15 @@ def store_file(path: str, basename: Union[str, None]=None, **kwargs) -> Union[st
     if basename is None:
         basename = os.path.basename(path)
     config = _load_config(**kwargs)
-    sha1 = _compute_local_file_sha1(path, config=config)
-    if not sha1:
-        raise Exception('Unable to compute SHA-1 of file: {}'.format(path))
+    algorithm = config['algorithm']
+    hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
+    if not hash0:
+        raise Exception('Unable to compute {} hash of file: {}'.format(algorithm, path))
     if not config['use_remote_only']:
-        _store_local_file_in_cache(path, sha1=sha1, config=config)
+        _store_local_file_in_cache(path, algorithm=algorithm, hash=hash0, config=config)
     if config['use_remote'] or config['use_remote_only']:
-        _upload_local_file(path, sha1=sha1, config=config)
-    return 'sha1://{}/{}'.format(sha1, basename)
+        _upload_local_file(path, algorithm=algorithm, hash=hash0, config=config)
+    return '{}://{}/{}'.format(algorithm, hash0, basename)
     
     
 def store_text(text: str, basename: Union[str, None]=None, **kwargs) -> Union[str, None]:
@@ -130,78 +153,118 @@ def store_npy(array: np.ndarray, basename: Union[str, None]=None, **kwargs) -> U
         return store_file(tmpfile.name, basename=basename, **kwargs)
 
 def store_dir(dirpath: str, label: Union[str, None]=None, **kwargs):
+    config = _load_config(**kwargs)
     if label is None:
         label = os.path.basename(dirpath)
-    raise Exception('Not yet implemented')
+    X = _read_file_system_dir(dirpath, recursive=True, include_hashes=True, store_files=True, config=config)
+    if not X:
+        return None
+    path1 = store_object(X, config=config)
+    assert path1 is not None
+    hash0, algorithm = _determine_file_hash_from_url(url=path1, config=config)
+    return '{}dir://{}.{}'.format(algorithm, hash0, label)
 
-def read_dir(path: str, **kwargs):
-    raise Exception('Not yet implemented')
+def read_dir(path: str, *, recursive: bool=True, **kwargs):
+    config = _load_config(**kwargs)
+    if _is_hash_url(path):
+        protocol, algorithm, hash0, additional_path = _parse_hash_url(path)
+        if not protocol.endswith('dir'):
+            raise Exception('Not a directory: {}'.format(path))
+        dd = load_object('{}://{}'.format(algorithm, hash0), config=config)
+        if dd is None:
+            return None
+        if additional_path:
+            list0 = additional_path.split('/')
+        else:
+            list0 = []
+        ii = 0
+        while ii < len(list0):
+            name0 = list0[ii]
+            if name0 in dd['dirs']:
+                dd = dd['dirs'][name0]
+            elif name0 in dd['files']:
+                raise Exception('Not a directory: {}'.format(path))
+            else:
+                return None
+            ii = ii + 1
+        if dd:
+            if not recursive:
+                for dname in dd['dirs']:
+                    dd['dirs'][dname] = {}
+        return dd
+    else:
+        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=False, config=config)
 
-def _compute_local_file_sha1(path: str, *, config: dict) -> Union[str, None]:
-    return _sha1_cache.computeFileSha1(path)
+def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Union[str, None]:
+    return _hash_caches[algorithm].computeFileHash(path)
 
-def _store_local_file_in_cache(path: str, *, sha1: str, config: dict) -> None:
-    local_path, sha1 = _sha1_cache.copyFileToCache(path)
-    if sha1 is None:
+def _store_local_file_in_cache(path: str, *, hash: str, algorithm: str, config: dict) -> None:
+    local_path, hash2 = _hash_caches[algorithm].copyFileToCache(path)
+    if hash2 is None:
         raise Exception('Unable to store local file in cache: {}'.format(path))
 
 def _find_file_locally(path: str, *, config: dict) -> Union[str, None]:
-    if path.startswith('sha1://') or path.startswith('sha1dir://'):
-        sha1 = _determine_file_sha1_from_url(path, config=config)
-        return _sha1_cache.findFile(sha1=sha1)
+    if _is_hash_url(path):
+        hash0, algorithm = _determine_file_hash_from_url(path, config=config)
+        if not hash0:
+            return None
+        return _hash_caches[algorithm].findFile(hash=hash0)
     elif os.path.isfile(path):
         return path
     else:
         return None
 
-def _check_remote_file(sha1_url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[int, None]]:
-    if sha1_url.startswith('sha1://') or sha1_url.startswith('sha1dir://'):
-        sha1: str = _determine_file_sha1_from_url(sha1_url, config=config)
-        url_check: str = _form_check_url(sha1=sha1, config=config)
+def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[str, None], Union[int, None]]:
+    if _is_hash_url(hash_url):
+        hash0, algorithm = _determine_file_hash_from_url(hash_url, config=config)
+        url_check: str = _form_check_url(hash=hash0, algorithm=algorithm, config=config)
         check_resp: dict = _http_get_json(url_check)
         if not check_resp['success']:
             print('Warning: Problem checking for file: ' + check_resp['error'])
-            return None, None, None
+            return None, None, None, None
         if check_resp['found']:
-            url_download = _form_download_url(sha1=sha1, config=config)
+            url_download = _form_download_url(hash=hash0, algorithm=algorithm, config=config)
             size = check_resp['size']
-            return url_download, sha1, size
+            return url_download, algorithm, hash0, size
         else:
-            return None, None, None
+            return None, None, None, None
     else:
         raise Exception('Unexpected')
 
-def _form_download_url(*, sha1: str, config: dict) -> str:
+def _form_download_url(*, algorithm: str, hash: str, config: dict) -> str:
     url = config['url']
     channel = config['channel']
     signature = _sha1_of_object(dict(
+        algorithm=algorithm,
+        hash=hash,
         name='download',
         password=config['password'],
-        sha1=sha1
     ))
-    return '{}/get/sha1/{}?channel={}&signature={}'.format(url, sha1, channel, signature)
+    return '{}/get/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
-def _form_check_url(*, sha1: str, config: dict) -> str:
+def _form_check_url(*, algorithm: str, hash: str, config: dict) -> str:
     url = config['url']
     channel = config['channel']
     signature = _sha1_of_object(dict(
+        algorithm=algorithm,
+        hash=hash,
         name='check',
-        password=config['password'],
-        sha1=sha1
+        password=config['password']
     ))
-    return '{}/check/sha1/{}?channel={}&signature={}'.format(url, sha1, channel, signature)
+    return '{}/check/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
-def _form_upload_url(*, sha1: str, config: dict) -> str:
+def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
     url = config['url']
     channel = config['channel']
     signature = _sha1_of_object(dict(
+        algorithm=algorithm,
+        hash=hash,
         name='upload',
         password=config['password'],
-        sha1=sha1
     ))
-    return '{}/set/sha1/{}?channel={}&signature={}'.format(url, sha1, channel, signature)
+    return '{}/set/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
-def _upload_local_file(path: str, *, sha1: str, config: dict) -> None:
+def _upload_local_file(path: str, *, hash: str, algorithm: str, config: dict) -> None:
     if not config['url']:
         raise Exception('Missing url config parameter for uploading to remote server')
     if not config['channel']:
@@ -210,16 +273,16 @@ def _upload_local_file(path: str, *, sha1: str, config: dict) -> None:
         raise Exception('Missing password config parameter for uploading to remote server')
     size0 = os.path.getsize(path)
 
-    url_ch, sha1_ch, size_ch = _check_remote_file('sha1://{}'.format(sha1), config=config)
+    url_ch, algorithm_ch, hash_ch, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
     if url_ch is not None:
         # already on the remote server
         if size_ch != size0:
             raise Exception('Unexpected: size of file on remote server does not match local file {} - {} <> {}'.format(path, size_ch, size0))
         return
 
-    url0 = _form_upload_url(sha1=sha1, config=config)
+    url0 = _form_upload_url(algorithm=algorithm, hash=hash, config=config)
     if size0 > 10000:
-        print('Uploading to kachery --- ({}): {} -> {}'.format(_format_file_size(size0), path, url))
+        print('Uploading to kachery --- ({}): {} -> {}'.format(_format_file_size(size0), path, url0))
 
     timer = time.time()
     resp_obj = _http_post_file_data(url0, path)
@@ -232,21 +295,50 @@ def _upload_local_file(path: str, *, sha1: str, config: dict) -> None:
     if not resp_obj.get('success', False):
         raise Exception('Problem posting file data: ' + resp_obj.get('error', ''))
 
-def _determine_file_sha1_from_url(url: str, *, config: dict) -> str:
-    protocol, sha1, additional_path = _parse_sha1_url(url)
-    if protocol == 'sha1':
-        return sha1
-    elif protocol == 'sha1dir':
-        raise Exception('This case not yet implemented')
+def _determine_file_hash_from_url(url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None]]:
+    protocol, algorithm, hash0, additional_path = _parse_hash_url(url)
+    if not protocol.endswith('dir'):
+        return hash0, algorithm
+    dd = load_object('{}://{}'.format(algorithm, hash0))
+    if not dd:
+        return None, None
+    if additional_path:
+        list0 = additional_path.split('/')
     else:
-        raise Exception('Unexpected protocol in url {}: {}'.format(url, protocol))
+        list0 = []
+    ii = 0
+    while ii < len(list0):
+        name0 = list0[ii]
+        if name0 in dd['dirs']:
+            dd = dd['dirs'][name0]
+        elif name0 in dd['files']:
+            if ii + 1 == len(list0):
+                hash1 = None
+                algorithm1 = None
+                for alg in ['sha1', 'md5']:
+                    if alg in dd['files'][name0]:
+                        hash1 = dd['files'][name0][alg]
+                        algorithm1 = alg
+                return hash1, algorithm1
+            else:
+                return None, None
+        else:
+            return None, None
+        ii = ii + 1
+    return None, None
 
-def _parse_sha1_url(url: str) -> Tuple[str, str, str]:
+def _parse_hash_url(url: str) -> Tuple[str, str, str, str]:
     list0 = url.split('/')
     protocol = list0[0].replace(':', '')
-    sha1 = list0[2]
+    hash0 = list0[2]
+    if '.' in hash0:
+        hash0 = hash0.split('.')[0]
     additional_path = '/'.join(list0[3:])
-    return protocol, sha1, additional_path
+    algorithm = None
+    for alg in ['sha1', 'md5']:
+        if protocol.startswith(alg):
+            algorithm = alg
+    return protocol, algorithm, hash0, additional_path
 
 def _sha1_of_string(txt: str) -> str:
     hh = hashlib.sha1(txt.encode('utf-8'))
@@ -319,3 +411,28 @@ def _http_post_file_data(url: str, fname: str, verbose: Optional[bool]=None) -> 
     if verbose:
         print('Elapsed time for _http_post_file_Data: {}'.format(time.time() - timer))
     return json.loads(obj.content)
+
+def _read_file_system_dir(path: str, *, recursive: bool, include_hashes: bool, store_files: bool, config: dict) -> Union[dict, None]:
+    ret: dict = dict(
+        files={},
+        dirs={}
+    )
+    algorithm = config['algorithm']
+    list0 = os.listdir(path)
+    for name0 in list0:
+        path0 = path + '/' + name0
+        if os.path.isfile(path0):
+            ret['files'][name0] = dict(
+                size=os.path.getsize(path0)
+            )
+            if include_hashes:
+                hash1 = _compute_local_file_hash(path0, algorithm=algorithm, config=config)
+                ret['files'][name0][algorithm] = hash1
+            if store_files:
+                store_file(path0, config=config)
+        elif os.path.isdir(path0):
+            ret['dirs'][name0] = {}
+            if recursive:
+                ret['dirs'][name0] = _read_file_system_dir(
+                    path=path0, recursive=recursive, include_hashes=include_hashes, store_files=store_files, config=config)
+    return ret

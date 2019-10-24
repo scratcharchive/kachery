@@ -2,16 +2,25 @@ import fs from 'fs';
 import crypto from 'crypto';
 
 export default class KacheryTaskRegulator {
-    constructor(configFilePath) {
+    constructor(config) {
         this._channels = {};
-        this._loadChannelConfig(configFilePath);
+
+        if (!config.channels) {
+            throw new Error(`Missing field in config: channels`);
+        }
+        if (config.channels.length === 0) {
+            console.warn('No channels provided in config file');
+        }
+        for (let ch of config.channels) {
+            this._channels[ch.name] = new Channel(ch);
+        }
     }
-    approveTask(taskName, channelName, sha1, numBytes, signature, req) {
+    approveTask(taskName, channelName, algorithm, hash, numBytes, signature, req) {
         if (!this._channels[channelName]) {
             return { approved: false, reason: `Channel not found in config: ${channelName}` };
         }
         let channel = this._channels[channelName];
-        if (!verifySignature(taskName, sha1, channel.password(), signature)) {
+        if (!verifySignature(taskName, algorithm, hash, channel.password(), signature)) {
             return { approve: false, reason: 'incorrect or missing signature', delay: 1000 };
         }
         if (taskName === 'check') {
@@ -43,24 +52,6 @@ export default class KacheryTaskRegulator {
         }
         else {
             throw new Error(`Unexpected name in finalizeTask: ${name}`);
-        }
-    }
-    _loadChannelConfig(filePath) {
-        let txt = fs.readFileSync(filePath);
-        try {
-            this._channelConfig = JSON.parse(txt);
-        }
-        catch (err) {
-            throw new Error(`Unable to parse JSON of config file: ${filePath}`);
-        }
-        if (!this._channelConfig.channels) {
-            throw new Error(`Missing field in channel config: channels`);
-        }
-        if (this._channelConfig.channels.length === 0) {
-            console.warn('No channels provided in config file');
-        }
-        for (let ch of this._channelConfig.channels) {
-            this._channels[ch.name] = new Channel(ch);
         }
     }
 }
@@ -247,7 +238,7 @@ function sha1OfObject(obj) {
     return shasum.digest('hex');
 }
 
-function verifySignature(name, sha1, password, signature) {
+function verifySignature(name, algorithm, hash, password, signature) {
     if (process.env.KACHERY_TEST_SIGNATURE) {
         if ((signature === process.env.KACHERY_TEST_SIGNATURE)) {
             console.warn('WARNING: verified using test signature from KACHERY_TEST_SIGNATURE environment variable');
@@ -256,9 +247,10 @@ function verifySignature(name, sha1, password, signature) {
     }
     let expectedSignature = sha1OfObject({
         // keys in alphabetical order
+        algorithm: algorithm,
+        hash: hash,
         name: name,
-        password: password,
-        sha1: sha1
+        password: password
     });
     return ((signature === expectedSignature));
 }

@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 
 import KacheryServer from './KacheryServer.js';
-import KacheryTaskRegulator from './KacheryTaskRegulator.js';
 import fs from 'fs';
 
 checkEnvironmentVariable('KACHERY_STORAGE_DIR', {checkDirExists: true});
-checkEnvironmentVariable('KACHERY_CHANNELS_CONFIG', {checkFileExists: true});
 checkEnvironmentVariable('PORT', {checkIsInt: true});
 
 if (process.env.KACHERY_TEST_SIGNATURE) {
@@ -13,13 +11,8 @@ if (process.env.KACHERY_TEST_SIGNATURE) {
 }
 
 async function main() {
-    const regulator = new KacheryTaskRegulator(process.env.KACHERY_CHANNELS_CONFIG);
-    const server = new KacheryServer(process.env.KACHERY_STORAGE_DIR, regulator);
+    const server = new KacheryServer(process.env.KACHERY_STORAGE_DIR);
     await server.listen(process.env.PORT);
-}
-
-function waitMsec(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function checkEnvironmentVariable(varname, opts) {

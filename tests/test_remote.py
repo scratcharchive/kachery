@@ -9,14 +9,19 @@ def test_remote():
         password='romet'
     )
     
-    for pass0 in range(1, 3):
-        if pass0 == 1:
-            ka.set_config(use_remote=False, use_remote_only=True)
-        elif pass0 == 2:
-            ka.set_config(use_remote=True, use_remote_only=False)
-        _test_store_text('abctest')
-        _test_store_object(dict(a=1, b=2, c=[1, 2, 3]))
-        _test_store_npy(np.ones((12, 12)))
+    for alg in ['sha1', 'md5']:
+        ka.set_config(algorithm=alg)
+        for pass0 in range(1, 3):
+            if pass0 == 1:
+                ka.set_config(use_remote=False, use_remote_only=True)
+            elif pass0 == 2:
+                ka.set_config(use_remote=True, use_remote_only=False)
+            _test_store_text('abctest')
+            _test_store_object(dict(a=1, b=2, c=[1, 2, 3]))
+            _test_store_npy(np.ones((12, 12)))
+    
+    a = ka.load_text('sha1://906faceaf874dd64e81de0048f36f4bab0f1f171')
+    print(a)
 
 def _test_store_text(val: str):
     x = ka.store_text(val)

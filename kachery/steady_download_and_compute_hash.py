@@ -7,13 +7,13 @@ from typing import Union
 import time
 
 
-def steady_download_and_compute_sha1(url: str, target_path: str, chunk_size: int=1024 * 1024 * 40) -> str:
+def steady_download_and_compute_hash(url: str, algorithm: str, target_path: str, chunk_size: int=1024 * 1024 * 40) -> str:
     response = requests.head(url)
     size_bytes = int(response.headers['content-length'])
     str0 = ''.join(random.sample(string.ascii_lowercase, 8))
     path_tmp = target_path + '.tmp.' + str0
     try:
-        hh = hashlib.sha1()
+        hh = getattr(hashlib, algorithm)()
         with open(path_tmp, 'wb') as f:
             for ii in range(0, size_bytes, chunk_size):
                 jj = ii + chunk_size
@@ -28,8 +28,8 @@ def steady_download_and_compute_sha1(url: str, target_path: str, chunk_size: int
                         hh.update(chunk)
                         f.write(chunk)
         os.rename(path_tmp, target_path)
-        sha1 = hh.hexdigest()
-        return sha1
+        hash0 = hh.hexdigest()
+        return hash0
     except:
         if os.path.exists(path_tmp):
             os.remove(path_tmp)

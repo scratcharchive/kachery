@@ -1,15 +1,25 @@
 import express from 'express';
 import https from 'https';
 import http from 'http';
-import Sha1Cache from './Sha1Cache.js';
+import HashCache from './HashCache.js';
 import DownloadHandler from './DownloadHandler.js';
 import UploadHandler from './UploadHandler.js';
+import KacheryTaskRegulator from './KacheryTaskRegulator.js';
+import KacheryIndexer from './KacheryIndexer.js';
+import fs from 'fs';
 
 export default class KacheryServer {
     constructor(storageDir, regulator) {
+        const config = readJsonFile(storageDir + '/kachery.json');
+        mkdirIfNeeded(storageDir + '/sha1-cache');
+        mkdirIfNeeded(storageDir + '/md5-cache');
         this._storageDir = storageDir;
-        this._regulator = regulator;
-        this._sha1Cache = new Sha1Cache(this._storageDir);
+        this._regulator = new KacheryTaskRegulator(config);;
+        this._indexer = new KacheryIndexer(this._storageDir);
+        this._caches = {
+            sha1: new HashCache(this._storageDir + '/sha1-cache', 'sha1', this._indexer),
+            md5: new HashCache(this._storageDir + '/md5-cache', 'md5', this._indexer)
+        };
 
         this._app = express(); // the express app
 
@@ -26,8 +36,8 @@ export default class KacheryServer {
                 await this._errorResponse(req, res, 500, err.message);
             }
         });
-        this._app.get('/check/sha1/:sha1', async (req, res) => {
-            let approvalObject = await this._approveTask('check', req.query.channel, req.params.sha1, null, req.query.signature, req);
+        this._app.get('/check/:algorithm/:hash', async (req, res) => {
+            let approvalObject = await this._approveTask('check', req.query.channel, req.params.algorithm, req.params.hash, null, req.query.signature, req);
             if (!approvalObject.approve) {
                 await this._errorResponse(req, res, 500, approvalObject.reason);
                 return;
@@ -42,15 +52,15 @@ export default class KacheryServer {
                 this._finalizeTask('check', req.query.channel, null, approvalObject);
             }
         });
-        this._app.get('/get/sha1/:sha1', async (req, res) => {
+        this._app.get('/get/:algorithm/:hash', async (req, res) => {
             ///////////////////////////////////////////////////////////////////////
             // First we need to do a check to determine the file size
             let params = req.params;
-            if (params.sha1.length != 40) {
-                await this._errorResponse(req, res, 500, 'Invalid sha1 string');
+            if (!validateHashString(params.algorithm, params.hash)) {
+                await this._errorResponse(req, res, 500, `Invalid ${params.algorithm} string`);
                 return;
             }
-            let result = await this._sha1Cache.findFileForSha1(params.sha1);
+            let result = await this._caches[params.algorithm].findFileForHash(params.hash);
             if (!result.found) {
                 await this._errorResponse(req, res, 500, 'Not found.');
                 return;
@@ -58,7 +68,7 @@ export default class KacheryServer {
             let numBytes = result.size;
             ///////////////////////////////////////////////////////////////////////
 
-            let approvalObject = await this._approveTask('download', req.query.channel, req.params.sha1, numBytes, req.query.signature, req);
+            let approvalObject = await this._approveTask('download', req.query.channel, req.params.algorithm, req.params.hash, numBytes, req.query.signature, req);
             if (!approvalObject.approve) {
                 await this._errorResponse(req, res, 500, approvalObject.reason);
                 return;
@@ -73,13 +83,13 @@ export default class KacheryServer {
                 this._finalizeTask('download', req.query.channel, 0, approvalObject);
             }
         });
-        this._app.post('/set/sha1/:sha1', async (req, res) => {
+        this._app.post('/set/:algorithm/:hash', async (req, res) => {
             let numBytes = Number(req.headers['content-length']);
             if (isNaN(numBytes))  {
                 await this._errorResponse(req, res, 500, 'Missing or invalid content-length in request header');
                 return;
             }
-            let approvalObject = await this._approveTask('upload', req.query.channel, req.params.sha1, numBytes, req.query.signature, req);
+            let approvalObject = await this._approveTask('upload', req.query.channel, req.params.algorithm, req.params.hash, numBytes, req.query.signature, req);
             if (!approvalObject.approve) {
                 await this._errorResponse(req, res, 500, approvalObject.reason);
                 return;
@@ -94,6 +104,8 @@ export default class KacheryServer {
                 this._finalizeTask('upload', req.query.channel, 0, approvalObject);
             }
         });
+
+        this._indexer.startIndexing();
     }
     async _apiProbe(req, res) {
         res.json({ success: true });
@@ -101,34 +113,34 @@ export default class KacheryServer {
     async _apiCheck(req, res) {
         let params = req.params;
         let query = req.query; //unused
-        if (params.sha1.length != 40) {
-            await this._errorResponse(req, res, 500, 'Invalid sha1 string');
+        if (!validateHashString(params.algorithm, params.hash)) {
+            await this._errorResponse(req, res, 500, `Invalid ${params.algorithm} string`);
             return;
         }
-        let result = await this._sha1Cache.findFileForSha1(params.sha1);
+        let result = await this._caches[params.algorithm].findFileForHash(params.hash);
         res.json({ success: true, found: result.found, size: result.size });
     }
     async _apiGet(req, res) {
         let params = req.params;
         let query = req.query;
-        if (params.sha1.length != 40) {
-            await this._errorResponse(req, res, 500, 'Invalid sha1 string');
+        if (!validateHashString(params.algorithm, params.hash)) {
+            await this._errorResponse(req, res, 500, `Invalid ${params.algorithm} string`);
             return;
         }
-        let result = await this._sha1Cache.findFileForSha1(params.sha1);
+        let result = await this._caches[params.algorithm].findFileForHash(params.hash);
         if ((!result.found)) {
             await this._errorResponse(req, res, 500, 'File not found.');
             return;
         }
-        let X = new DownloadHandler(this._sha1Cache);
+        let X = new DownloadHandler(this._caches[params.algorithm]);
         let timer = new Date();
         try {
-            await X.handleDownload(params.sha1, req, res)
+            await X.handleDownload(params.hash, req, res)
             let elapsed = ((new Date()) - timer) / 1000;
-            console.info(`Downloaded file ${params.sha1} in ${elapsed} sec.`);
+            console.info(`Downloaded file ${params.hash} in ${elapsed} sec.`);
         }
         catch (err) {
-            console.warn(`Error downloading file ${params.sha1}: ${err.message}`);
+            console.warn(`Error downloading file ${params.hash}: ${err.message}`);
             await this._errorResponse(req, res, 500, `Error downloading file: ${err.message}`);
         }
     }
@@ -140,8 +152,8 @@ export default class KacheryServer {
         */
         let params = req.params;
         let query = req.query;
-        if (params.sha1.length != 40) {
-            await this._errorResponse(req, res, 500, 'Invalid sha1 string');
+        if (!validateHashString(params.algorithm, params.hash)) {
+            await this._errorResponse(req, res, 500, `Invalid ${params.algorithm} string`);
             return;
         }
         let file_size = Number(req.headers['content-length']);
@@ -149,16 +161,16 @@ export default class KacheryServer {
             await this._errorResponse(req, res, 500, 'Missing or invalid content-length in request header');
             return;
         }
-        let X = new UploadHandler(this._sha1Cache);
+        let X = new UploadHandler(this._caches[params.algorithm]);
         let timer = new Date();
         try {
-            await X.handleUpload(params.sha1, file_size, req, res)
+            await X.handleUpload(params.hash, file_size, req, res)
             let elapsed = ((new Date()) - timer) / 1000;
-            console.info(`Uploaded file ${params.sha1} in ${elapsed} sec.`);
+            console.info(`Uploaded file ${params.hash} in ${elapsed} sec.`);
             res.json({ success: true });
         }
         catch (err) {
-            console.warn(`Error uploading file ${params.sha1}: ${err.message}`);
+            console.warn(`Error uploading file ${params.hash}: ${err.message}`);
             await this._errorResponse(req, res, 500, `Error uploading file: ${err.message}`);
         }
     }
@@ -178,8 +190,8 @@ export default class KacheryServer {
             console.warn(`Problem destroying connection: ${err.message}`);
         }
     }
-    async _approveTask(taskName, channel, sha1, numBytes, signature, req) {
-        let approval = this._regulator.approveTask(taskName, channel, sha1, numBytes, signature, req);
+    async _approveTask(taskName, channel, algorithm, hash, numBytes, signature, req) {
+        let approval = this._regulator.approveTask(taskName, channel, algorithm, hash, numBytes, signature, req);
         if (approval.defer) {
             console.info(`Deferring ${taskName} task`);
             while (approval.defer) {
@@ -227,4 +239,38 @@ async function start_http_server(app, listen_port) {
     }
     await app.server.listen(listen_port);
     console.info(`Server is running ${app.protocol} on port ${app.port}`);
+}
+
+function readJsonFile(filePath) {
+    const txt = fs.readFileSync(filePath);
+    try {
+        return JSON.parse(txt);
+    }
+    catch (err) {
+        throw new Error(`Unable to parse JSON of file: ${filePath}`);
+    }
+}
+
+function mkdirIfNeeded(path) {
+    if (!fs.existsSync(path)) {
+        fs.mkdirSync(path);
+    }
+}
+
+function validateHashString(algorithm, hash) {
+    if (algorithm == 'sha1') {
+        if (hash.length != 40) {
+            return false;
+        }
+        return true;
+    }
+    else if (algorithm == 'md5') {
+        if (hash.length != 32) {
+            return false;
+        }
+        return true;
+    }
+    else {
+        return false;
+    }
 }

@@ -1,14 +1,14 @@
 export default class DownloadHandler {
-    constructor(sha1Cache) {
-        this._sha1Cache = sha1Cache;
+    constructor(hashCache) {
+        this._hashCache = hashCache;
     }
-    async handleDownload(sha1, req, res) {
-        let result = await this._sha1Cache.findFileForSha1(sha1, {returnRelPath: true});
+    async handleDownload(hash, req, res) {
+        let result = await this._hashCache.findFileForHash(hash, {returnPath: true});
         if (!result.found) {
             throw new Error('File not found.');
         }
 
-        await sendFile(res, result.relPath, this._sha1Cache.directory());
+        await sendFile(res, result.relPath, this._hashCache.directory());
     }
 }
 

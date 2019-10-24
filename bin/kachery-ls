@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import argparse
+import time
+import kachery as ka
+
+def main():
+    old_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
+    parser = argparse.ArgumentParser(description='List the contents of a directory.')
+    parser.add_argument('path', help='Hash path to the directory (e.g. sha1dir://ffab0b71c5086486970d4a5b3fe44bae366697e0.tests)')
+    parser.add_argument('--download', '-d', help='Whether to download the data remotely if not available locally', required=False, action='store_true')
+    parser.add_argument('--download-only', '-do', help='Whether to download the data remotely without looking locally (mostly good for troubleshooting)', required=False, action='store_true')
+    parser.add_argument('--url', help='The URL of the kachery database server to download from (or use KACHERY_URL environment variable and the --upload (-u) flag)', required=False, default=None)
+    parser.add_argument('--channel', '-c', help='The channel of the kachery database server to download from (or use KACHERY_CHANNEL environment variable)', required=False, default=None)
+    parser.add_argument('--password', '-p', help='The password of the kachery database server to download from (or use KACHERY_PASSWORD environment variable)', required=False, default=None)    
+
+    args = parser.parse_args()
+    path = args.path
+
+    if args.download or args.download_only:
+        url=args.url or os.getenv('KACHERY_URL')
+        channel=args.channel or os.getenv('KACHERY_CHANNEL')
+        password=args.password or os.getenv('KACHERY_PASSWORD')
+        if not url:
+            raise Exception('You must specify a URL either using the --url flag or by setting the KACHERY_URL environment variable')
+        if not channel:
+            raise Exception('You must specify a channel either using the --channel (-c) flag or by setting the KACHERY_CHANNEL environment variable')
+        if not password:
+            raise Exception('You must specify a password either using the --password (-p) flag or by setting the KACHERY_PASSWORD environment variable')
+        if args.download:
+            ka.set_config(
+                use_remote=True
+            )
+        if args.download_only:
+            ka.set_config(
+                use_remote_only=True
+            )
+        ka.set_config(
+            url=url,
+            channel=channel,
+            password=password
+        )
+    elif args.url or args.channel or args.password:
+        raise Exception('You must specify either --download (-d) or --download-only (-do) when using these options.')
+    dd = ka.read_dir(path=path)
+    if not dd:
+        raise Exception('Error loading directory.')
+
+    sys.stdout = old_stdout
+
+    dnames = sorted(dd['dirs'].keys())
+    for dname in dnames:
+        print(dname+'/')
+    fnames = sorted(dd['files'].keys())
+    for fname in fnames:
+        print(fname)
+
+if __name__ == "__main__":
+    main()
