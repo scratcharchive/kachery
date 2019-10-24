@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--url', help='The URL of the kachery database server to upload to (or use KACHERY_URL environment variable and the --upload (-u) flag)', required=False, default=None)
     parser.add_argument('--channel', '-c', help='The channel of the kachery database server to upload to (or use KACHERY_CHANNEL environment variable)', required=False, default=None)
     parser.add_argument('--password', '-p', help='The password of the kachery database server to upload to (or use KACHERY_PASSWORD environment variable)', required=False, default=None)
+    parser.add_argument('--git-annex-mode', help='Act smart with git-annex repos', required=False, action='store_true')
     
 
     args = parser.parse_args()
@@ -54,7 +55,7 @@ def main():
     if os.path.isfile(path):
         address = ka.store_file(path)
     elif os.path.isdir(path):
-        address = ka.store_dir(path)
+        address = ka.store_dir(path, git_annex_mode=args.git_annex_mode)
     else:
         raise Exception('Not a file or directory: {}'.format(path))
 

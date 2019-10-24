@@ -71,7 +71,7 @@ def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
     if _is_hash_url(path):
         if not config['use_remote_only']:
-            ret = _find_file_locally(path, config=config)
+            ret, _, _ = _find_file_locally(path, config=config)
             if ret:
                 if dest:
                     shutil.copyfile(ret, dest)
@@ -116,7 +116,47 @@ def load_npy(path: str, **kwargs) -> Union[np.ndarray, None]:
         return None
     return np.load(path2)
 
-def store_file(path: str, basename: Union[str, None]=None, **kwargs) -> Union[str, None]:
+def get_file_info(path: str, **kwargs) -> Union[dict, None]:
+    config = _load_config(**kwargs)
+    if _is_hash_url(path):
+        if not config['use_remote_only']:
+            fname, hash1, algorithm1 = _find_file_locally(path, config=config)
+            if fname:
+                assert hash1 is not None
+                assert algorithm1 is not None
+                ret = dict(
+                    path=fname,
+                    size=os.path.getsize(fname)
+                )
+                ret[algorithm1] = hash1
+                return ret
+        if config['use_remote'] or config['use_remote_only']:
+            url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
+            if url0:
+                assert algorithm is not None
+                assert hash0 is not None
+                assert size0 is not None
+                ret = dict(
+                    url=url0,
+                    size=size0
+                )
+                ret[algorithm] = hash0
+                return ret
+            else:
+                return None
+        return None
+    else:
+        if os.path.isfile(path):
+            ret = dict(
+                path=path,
+                size=os.path.getsize(path)
+            )
+            ret[config['algorithm']] = _compute_local_file_hash(path, algorithm=config['algorithm'], config=config)
+            return ret
+        else:
+            return None
+
+def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=False, **kwargs) -> Union[str, None]:
     if basename is None:
         basename = os.path.basename(path)
     config = _load_config(**kwargs)
@@ -126,7 +166,7 @@ def store_file(path: str, basename: Union[str, None]=None, **kwargs) -> Union[st
         raise Exception('Unable to compute {} hash of file: {}'.format(algorithm, path))
     if not config['use_remote_only']:
         _store_local_file_in_cache(path, algorithm=algorithm, hash=hash0, config=config)
-    if config['use_remote'] or config['use_remote_only']:
+    if (config['use_remote'] or config['use_remote_only']) and (not git_annex_mode):
         _upload_local_file(path, algorithm=algorithm, hash=hash0, config=config)
     return '{}://{}/{}'.format(algorithm, hash0, basename)
     
@@ -152,11 +192,11 @@ def store_npy(array: np.ndarray, basename: Union[str, None]=None, **kwargs) -> U
         np.save(tmpfile.name, array)
         return store_file(tmpfile.name, basename=basename, **kwargs)
 
-def store_dir(dirpath: str, label: Union[str, None]=None, **kwargs):
+def store_dir(dirpath: str, label: Union[str, None]=None, git_annex_mode: bool=False, **kwargs):
     config = _load_config(**kwargs)
     if label is None:
         label = os.path.basename(dirpath)
-    X = _read_file_system_dir(dirpath, recursive=True, include_hashes=True, store_files=True, config=config)
+    X = _read_file_system_dir(dirpath, recursive=True, include_hashes=True, store_files=True, git_annex_mode=git_annex_mode, config=config)
     if not X:
         return None
     path1 = store_object(X, config=config)
@@ -164,7 +204,7 @@ def store_dir(dirpath: str, label: Union[str, None]=None, **kwargs):
     hash0, algorithm = _determine_file_hash_from_url(url=path1, config=config)
     return '{}dir://{}.{}'.format(algorithm, hash0, label)
 
-def read_dir(path: str, *, recursive: bool=True, **kwargs):
+def read_dir(path: str, *, recursive: bool=True, git_annex_mode: bool=False, **kwargs):
     config = _load_config(**kwargs)
     if _is_hash_url(path):
         protocol, algorithm, hash0, additional_path = _parse_hash_url(path)
@@ -179,6 +219,7 @@ def read_dir(path: str, *, recursive: bool=True, **kwargs):
             list0 = []
         ii = 0
         while ii < len(list0):
+            assert dd is not None
             name0 = list0[ii]
             if name0 in dd['dirs']:
                 dd = dd['dirs'][name0]
@@ -193,7 +234,7 @@ def read_dir(path: str, *, recursive: bool=True, **kwargs):
                     dd['dirs'][dname] = {}
         return dd
     else:
-        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=False, config=config)
+        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=False, git_annex_mode=git_annex_mode, config=config)
 
 def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Union[str, None]:
     return _hash_caches[algorithm].computeFileHash(path)
@@ -203,20 +244,29 @@ def _store_local_file_in_cache(path: str, *, hash: str, algorithm: str, config: 
     if hash2 is None:
         raise Exception('Unable to store local file in cache: {}'.format(path))
 
-def _find_file_locally(path: str, *, config: dict) -> Union[str, None]:
+def _find_file_locally(path: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[str, None]]:
     if _is_hash_url(path):
         hash0, algorithm = _determine_file_hash_from_url(path, config=config)
         if not hash0:
-            return None
-        return _hash_caches[algorithm].findFile(hash=hash0)
+            return None, None, None
+        assert algorithm is not None
+        ret = _hash_caches[algorithm].findFile(hash=hash0)
+        if ret is not None:
+            return ret, hash0, algorithm
+        else:
+            return None, None, None
     elif os.path.isfile(path):
-        return path
+        hash1 = _compute_local_file_hash(path, algorithm=config['algorithm'], config=config)
+        return path, hash1, config['algorithm']
     else:
-        return None
+        return None, None, None
 
 def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[str, None], Union[int, None]]:
     if _is_hash_url(hash_url):
         hash0, algorithm = _determine_file_hash_from_url(hash_url, config=config)
+        if hash0 is None:
+            return None, None, None, None
+        assert algorithm is not None
         url_check: str = _form_check_url(hash=hash0, algorithm=algorithm, config=config)
         check_resp: dict = _http_get_json(url_check)
         if not check_resp['success']:
@@ -300,7 +350,7 @@ def _determine_file_hash_from_url(url: str, *, config: dict) -> Tuple[Union[str,
     if not protocol.endswith('dir'):
         return hash0, algorithm
     dd = load_object('{}://{}'.format(algorithm, hash0))
-    if not dd:
+    if dd is None:
         return None, None
     if additional_path:
         list0 = additional_path.split('/')
@@ -308,6 +358,7 @@ def _determine_file_hash_from_url(url: str, *, config: dict) -> Tuple[Union[str,
         list0 = []
     ii = 0
     while ii < len(list0):
+        assert dd is not None
         name0 = list0[ii]
         if name0 in dd['dirs']:
             dd = dd['dirs'][name0]
@@ -338,6 +389,8 @@ def _parse_hash_url(url: str) -> Tuple[str, str, str, str]:
     for alg in ['sha1', 'md5']:
         if protocol.startswith(alg):
             algorithm = alg
+    if algorithm is None:
+        raise Exception('Unexpected protocol: {}'.format(protocol))
     return protocol, algorithm, hash0, additional_path
 
 def _sha1_of_string(txt: str) -> str:
@@ -412,7 +465,7 @@ def _http_post_file_data(url: str, fname: str, verbose: Optional[bool]=None) -> 
         print('Elapsed time for _http_post_file_Data: {}'.format(time.time() - timer))
     return json.loads(obj.content)
 
-def _read_file_system_dir(path: str, *, recursive: bool, include_hashes: bool, store_files: bool, config: dict) -> Union[dict, None]:
+def _read_file_system_dir(path: str, *, recursive: bool, include_hashes: bool, store_files: bool, git_annex_mode: bool, config: dict) -> Union[dict, None]:
     ret: dict = dict(
         files={},
         dirs={}
@@ -421,18 +474,38 @@ def _read_file_system_dir(path: str, *, recursive: bool, include_hashes: bool, s
     list0 = os.listdir(path)
     for name0 in list0:
         path0 = path + '/' + name0
-        if os.path.isfile(path0):
+        if git_annex_mode and os.path.islink(path0) and ('.git/annex/objects' in os.path.realpath(path0)):
+            hash1, algorithm1, size1 = _get_info_from_git_annex_link(path0)
+            ret['files'][name0] = dict(
+                size=size1
+            )
+            ret['files'][name0][algorithm1] = hash1
+        elif os.path.isfile(path0):
             ret['files'][name0] = dict(
                 size=os.path.getsize(path0)
             )
             if include_hashes:
-                hash1 = _compute_local_file_hash(path0, algorithm=algorithm, config=config)
-                ret['files'][name0][algorithm] = hash1
+                hash1b = _compute_local_file_hash(path0, algorithm=algorithm, config=config)
+                ret['files'][name0][algorithm] = hash1b
             if store_files:
-                store_file(path0, config=config)
+                store_file(path0, git_annex_mode=git_annex_mode, config=config)
         elif os.path.isdir(path0):
             ret['dirs'][name0] = {}
             if recursive:
                 ret['dirs'][name0] = _read_file_system_dir(
-                    path=path0, recursive=recursive, include_hashes=include_hashes, store_files=store_files, config=config)
+                    path=path0, recursive=recursive, include_hashes=include_hashes, store_files=store_files, git_annex_mode=git_annex_mode, config=config)
     return ret
+
+def _get_info_from_git_annex_link(path) -> Tuple[str, str, int]:
+    path1 = os.path.realpath(path)
+    # Example: /home/magland/data/najafi-2018-nwb/.git/annex/objects/Gx/pw/MD5E-s167484154--c8bc43bb1868301737797b09266c01a1.mat/MD5E-s167484154--c8bc43bb1868301737797b09266c01a1.mat
+    str1 = path1.split('/')[-1]
+    # Example: MD5E-s167484154--c8bc43bb1868301737797b09266c01a1.mat
+    size0 = int(str1.split('-')[1][1:])
+    if str1.split('-')[0] == 'MD5E':
+        algorithm0='md5'
+    else:
+        raise Exception('Unexpected string in _get_info_from_git_annex_link:' + path1)
+    hash0 = str1.split('-')[3].split('.')[0]
+    return hash0, algorithm0, size0
+
