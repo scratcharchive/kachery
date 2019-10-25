@@ -173,6 +173,9 @@ KACHERY_PASSWORD='password-for-channel'
 To host a kachery server you will need to create a directory
 with a kachery.json configuration file inside. For an example
 configuration file, see [server/example_kachery.json](server/example_kachery.json).
+You will notice that you can create password-protected channels and set the upload/download
+limits separately for each channel. In this way, you can give groups of users limited access
+for downloading and/or uploading files to the server.
 
 You can either use docker or NodeJS 12.x.x to run the server.
 The easiest is to use docker.
