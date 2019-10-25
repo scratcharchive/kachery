@@ -2,7 +2,7 @@
     "channels": [
         {
             "name": "name-of-channel",
-            "password": "password-of-channel",
+            "password": "password-for-channel",
             "downloadQuotas": [
                 {
                     "name": "small",

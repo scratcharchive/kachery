@@ -1,0 +1,17 @@
+# Pull the docker image (or build it, see below)
+docker pull magland/kachery2
+
+# Set the following environment variables:
+KACHERY_STORAGE_DIR=/full/path/to/storage/directory
+PORT=8081 or whatever
+
+# Run the docker image
+docker run -v $KACHERY_STORAGE_DIR:/storage -p $PORT:8080 -it magland/kachery2
+
+You will need to create a kachery.json configuration file in the storage directory.
+An example configuration file can be found in example_kachery.json
+
+#############################################################
+
+# To build (replace magland/kachery2 with whatever you like):
+docker build -t magland/kachery2 .

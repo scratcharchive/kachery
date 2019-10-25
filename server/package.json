@@ -1,11 +1,12 @@
 {
     "name": "kachery",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "description": "Share data for scientific research",
     "type": "module",
     "scripts": {
       "test": "echo \"No tests\" && exit 0",
-      "start": "node --experimental-modules server/main.js"
+      "start": "node --experimental-modules server/main.js",
+      "start-docker": "PORT=8080 KACHERY_STORAGE_DIR=/storage npm start"
     },
     "keywords": [],
     "author": "Jeremy Magland",

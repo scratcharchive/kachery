@@ -281,46 +281,67 @@ def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None]
     else:
         raise Exception('Unexpected')
 
+def _get_config_url(config):
+    if config['url']:
+        return config['url']
+    else:
+        if 'KACHERY_URL' in os.environ:
+            return os.environ['KACHERY_URL']
+        else:
+            raise Exception('You need to configure the kachery url or set the KACHERY_URL environment variable.')
+
+def _get_config_channel(config):
+    if config['channel']:
+        return config['channel']
+    else:
+        if 'KACHERY_CHANNEL' in os.environ:
+            return os.environ['KACHERY_CHANNEL']
+        else:
+            raise Exception('You need to configure the kachery channel or set the KACHERY_CHANNEL environment variable.')
+
+def _get_config_password(config):
+    if config['password']:
+        return config['password']
+    else:
+        if 'KACHERY_PASSWORD' in os.environ:
+            return os.environ['KACHERY_PASSWORD']
+        else:
+            raise Exception('You need to configure the kachery password or set the KACHERY_PASSWORD environment variable.')
+
 def _form_download_url(*, algorithm: str, hash: str, config: dict) -> str:
-    url = config['url']
-    channel = config['channel']
+    url = _get_config_url(config)
+    channel = _get_config_channel(config)
     signature = _sha1_of_object(dict(
         algorithm=algorithm,
         hash=hash,
         name='download',
-        password=config['password'],
+        password=_get_config_password(config),
     ))
     return '{}/get/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
 def _form_check_url(*, algorithm: str, hash: str, config: dict) -> str:
-    url = config['url']
-    channel = config['channel']
+    url = _get_config_url(config)
+    channel = _get_config_channel(config)
     signature = _sha1_of_object(dict(
         algorithm=algorithm,
         hash=hash,
         name='check',
-        password=config['password']
+        password=_get_config_password(config)
     ))
     return '{}/check/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
 def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
-    url = config['url']
-    channel = config['channel']
+    url = _get_config_url(config)
+    channel = _get_config_channel(config)
     signature = _sha1_of_object(dict(
         algorithm=algorithm,
         hash=hash,
         name='upload',
-        password=config['password'],
+        password=_get_config_password(config)
     ))
     return '{}/set/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
 def _upload_local_file(path: str, *, hash: str, algorithm: str, config: dict) -> None:
-    if not config['url']:
-        raise Exception('Missing url config parameter for uploading to remote server')
-    if not config['channel']:
-        raise Exception('Missing channel config parameter for uploading to remote server')
-    if not config['password']:
-        raise Exception('Missing password config parameter for uploading to remote server')
     size0 = os.path.getsize(path)
 
     url_ch, algorithm_ch, hash_ch, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
