@@ -33,11 +33,11 @@ def main():
             raise Exception('You must specify a password either using the --password (-p) flag or by setting the KACHERY_PASSWORD environment variable')
         if args.download:
             ka.set_config(
-                use_remote=True
+                download=True
             )
         if args.download_only:
             ka.set_config(
-                use_remote_only=True
+                download_only=True
             )
         ka.set_config(
             url=url,

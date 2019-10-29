@@ -1,0 +1,10 @@
+{
+    "widget": {
+        "title": "Explore",
+        "key": "Explore",
+        "type": "Explore",
+        "props": {
+            "dir_path": "sha1dir://9b43715be9942ee94a0601cb178b50eaa91d36f8.najafi-2018-nwb"
+        }
+    }
+}

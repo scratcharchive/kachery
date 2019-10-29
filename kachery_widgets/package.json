@@ -1,0 +1,12 @@
+{
+    "name": "kachery_widgets",
+    "dependencies": {
+        "@material-ui/core": "^4.2.0",
+        "@material-ui/icons": "^4.2.1",
+        "@material-ui/styles": "^4.2.0",
+        "highlight.js": "^9.15.8",
+        "react-highlight.js": "^1.0.7",
+        "react-icons": "^3.7.0",
+        "styled-components": "^4.3.2"
+    }
+}

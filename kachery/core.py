@@ -9,6 +9,8 @@ import time
 import requests
 import urllib.request as request
 import shutil
+import io
+import sys
 from .localhashcache import LocalHashCache
 
 _global_config=dict(
@@ -16,8 +18,10 @@ _global_config=dict(
     channel=os.getenv('KACHERY_CHANNEL', None),
     password=os.getenv('KACHERY_PASSWORD', None),
     algorithm='sha1',
-    use_remote=False,
-    use_remote_only=False
+    download=False,
+    download_only=False,
+    upload=False,
+    upload_only=False
 )
 
 _hash_caches = dict(
@@ -26,17 +30,23 @@ _hash_caches = dict(
 )
 
 def set_config(*,
-        use_remote: Union[bool, None]=None,
-        use_remote_only: Union[bool, None]=None,
+        download: Union[bool, None]=None,
+        download_only: Union[bool, None]=None,
+        upload: Union[bool, None]=None,
+        upload_only: Union[bool, None]=None,
         channel: Union[str, None]=None,
         password: Union[str, None]=None,
         algorithm: Union[str, None]=None,
         url: Union[str, None]=None
 ) -> None:
-    if use_remote is not None:
-        _global_config['use_remote'] = use_remote
-    if use_remote_only is not None:
-        _global_config['use_remote_only'] = use_remote_only
+    if download is not None:
+        _global_config['download'] = download
+    if download_only is not None:
+        _global_config['download_only'] = download_only
+    if upload is not None:
+        _global_config['upload'] = upload
+    if upload_only is not None:
+        _global_config['upload_only'] = upload_only
     if channel is not None:
         _global_config['channel'] = channel
     if password is not None:
@@ -70,14 +80,14 @@ def _is_hash_url(path):
 def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
     if _is_hash_url(path):
-        if not config['use_remote_only']:
+        if not config['download_only']:
             ret, _, _ = _find_file_locally(path, config=config)
             if ret:
                 if dest:
                     shutil.copyfile(ret, dest)
                     return dest
                 return ret
-        if config['use_remote'] or config['use_remote_only']:
+        if config['download'] or config['download_only']:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if url0:
                 assert algorithm is not None
@@ -116,10 +126,38 @@ def load_npy(path: str, **kwargs) -> Union[np.ndarray, None]:
         return None
     return np.load(path2)
 
+def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs) -> Union[bytes, None]:
+    config = _load_config(**kwargs)
+    if start is None and end is None:
+        local_fname = load_file(path=path, config=config)
+        if local_fname:
+            return _load_bytes_from_local_file(local_fname, config=config, write_to_stdout=write_to_stdout)
+    if _is_hash_url(path):
+        if not config['download_only']:
+            local_fname, _, _ = _find_file_locally(path, config=config)
+            if local_fname:
+                return _load_bytes_from_local_file(local_fname, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
+        if config['download'] or config['download_only']:
+            url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
+            if url0:
+                assert algorithm is not None
+                assert hash0 is not None
+                assert size0 is not None
+                return _load_bytes_from_remote_file(url=url0, size=size0, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
+            else:
+                return None
+        return None
+    else:
+        if os.path.isfile(path):
+            return _load_bytes_from_local_file(path, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
+        else:
+            return None
+    
+
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
     if _is_hash_url(path):
-        if not config['use_remote_only']:
+        if not config['download_only']:
             fname, hash1, algorithm1 = _find_file_locally(path, config=config)
             if fname:
                 assert hash1 is not None
@@ -130,7 +168,7 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
                 )
                 ret[algorithm1] = hash1
                 return ret
-        if config['use_remote'] or config['use_remote_only']:
+        if config['download'] or config['download_only']:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if url0:
                 assert algorithm is not None
@@ -164,9 +202,9 @@ def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=
     hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
     if not hash0:
         raise Exception('Unable to compute {} hash of file: {}'.format(algorithm, path))
-    if not config['use_remote_only']:
+    if not config['upload_only']:
         _store_local_file_in_cache(path, algorithm=algorithm, hash=hash0, config=config)
-    if (config['use_remote'] or config['use_remote_only']) and (not git_annex_mode):
+    if (config['upload'] or config['upload_only']) and (not git_annex_mode):
         _upload_local_file(path, algorithm=algorithm, hash=hash0, config=config)
     return '{}://{}/{}'.format(algorithm, hash0, basename)
     
@@ -240,7 +278,7 @@ def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Unio
     return _hash_caches[algorithm].computeFileHash(path)
 
 def _store_local_file_in_cache(path: str, *, hash: str, algorithm: str, config: dict) -> None:
-    local_path, hash2 = _hash_caches[algorithm].copyFileToCache(path)
+    _, hash2 = _hash_caches[algorithm].copyFileToCache(path)
     if hash2 is None:
         raise Exception('Unable to store local file in cache: {}'.format(path))
 
@@ -344,7 +382,7 @@ def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
 def _upload_local_file(path: str, *, hash: str, algorithm: str, config: dict) -> None:
     size0 = os.path.getsize(path)
 
-    url_ch, algorithm_ch, hash_ch, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
+    url_ch, _, __, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
     if url_ch is not None:
         # already on the remote server
         if size_ch != size0:
@@ -511,10 +549,15 @@ def _read_file_system_dir(path: str, *, recursive: bool, include_hashes: bool, s
             if store_files:
                 store_file(path0, git_annex_mode=git_annex_mode, config=config)
         elif os.path.isdir(path0):
-            ret['dirs'][name0] = {}
-            if recursive:
-                ret['dirs'][name0] = _read_file_system_dir(
-                    path=path0, recursive=recursive, include_hashes=include_hashes, store_files=store_files, git_annex_mode=git_annex_mode, config=config)
+            include = True
+            if git_annex_mode:
+                if name0 in ['.git', '.datalad']:
+                    include = False
+            if include:
+                ret['dirs'][name0] = {}
+                if recursive:
+                    ret['dirs'][name0] = _read_file_system_dir(
+                        path=path0, recursive=recursive, include_hashes=include_hashes, store_files=store_files, git_annex_mode=git_annex_mode, config=config)
     return ret
 
 def _get_info_from_git_annex_link(path) -> Tuple[str, str, int]:
@@ -530,3 +573,50 @@ def _get_info_from_git_annex_link(path) -> Tuple[str, str, int]:
     hash0 = str1.split('-')[3].split('.')[0]
     return hash0, algorithm0, size0
 
+def _load_bytes_from_local_file(local_fname: str, *, config: dict, start: Union[int, None]=None, end: Union[int, None]=None, write_to_stdout: bool=False) -> Union[bytes, None]:
+    size0 = os.path.getsize(local_fname)
+    if start is None:
+        start = 0
+    if end is None:
+        end = size0
+    if start < 0 or start > size0 or end < start or end > size0:
+        raise Exception('Invalid start/end range for file of size {}: {} - {}'.format(size0, start, end))
+    if start == end:
+        return bytes()
+    with open(local_fname, 'rb') as f:
+        f.seek(start)
+        if write_to_stdout:
+            ii = start
+            while ii < end:
+                nn = min(end - ii, 4096)
+                data0 = f.read(nn)
+                ii = ii + nn
+                sys.stdout.buffer.write(data0)
+            return None
+        else:
+            return f.read(end-start)
+
+def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Union[int, None]=None, end: Union[int, None]=None, write_to_stdout: bool=False) -> Union[bytes, None]:
+    if start is None:
+        start = 0
+    if end is None:
+        end = size
+    if start < 0 or start > size or end < start or end > size:
+        raise Exception('Invalid start/end range for file of size {}: {} - {}'.format(size, start, end))
+    if start == end:
+        return bytes()
+    headers = {
+        'Range': 'bytes={}-{}'.format(start, end-1)
+    }
+    bb = io.BytesIO()
+    response = requests.get(url, headers=headers, stream=True)
+    for chunk in response.iter_content(chunk_size=5120):
+        if chunk:  # filter out keep-alive new chunks
+            if write_to_stdout:
+                sys.stdout.buffer.write(chunk)
+            else:
+                bb.write(chunk)
+    if write_to_stdout:
+        return None
+    else:
+        return bb.getvalue()

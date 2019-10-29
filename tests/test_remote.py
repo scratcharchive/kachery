@@ -3,7 +3,8 @@ import numpy as np
 
 def test_remote():
     ka.set_config(
-        use_remote_only=True,
+        download_only=True,
+        upload_only=True,
         url='http://localhost:8081',
         channel='ccm',
         password='romet'
@@ -13,9 +14,9 @@ def test_remote():
         ka.set_config(algorithm=alg)
         for pass0 in range(1, 3):
             if pass0 == 1:
-                ka.set_config(use_remote=False, use_remote_only=True)
+                ka.set_config(download_only=True, upload_only=True)
             elif pass0 == 2:
-                ka.set_config(use_remote=True, use_remote_only=False)
+                ka.set_config(download_only=False, upload_only=False)
             _test_store_text('abctest')
             _test_store_object(dict(a=1, b=2, c=[1, 2, 3]))
             _test_store_npy(np.ones((12, 12)))

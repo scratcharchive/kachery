@@ -1,0 +1,10 @@
+{
+    "project_name": "kachery_widgets",
+    "version": "0.1.0",
+    "description": "Reactopya widgets associated with the kachery project",
+    "author": "Jeremy Magland",
+    "license": "Apache-2.0",
+    "setup_py": {
+        "install_requires": []
+    }
+}

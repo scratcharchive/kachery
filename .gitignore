@@ -3,3 +3,6 @@ yarn.lock
 __pycache__
 .mypy_cache
 test_data
+*.egg-info
+generated
+dist

@@ -18,8 +18,8 @@ sha1dir://615aa23efde8898aa89002613e20ad59dcde42f9.hybrid_janelia/drift_siprobe/
 
 Those strings are now universal pointers to the underlying file content, which
 can be retrieved as part of Python scripts and other applications. In this way
-we separate the representation of the files from their underlying locations.
-This provides many advantages as will be discussed (somewhere).
+we separate the representation of files from their underlying locations.
+This provides many advantages as will be seen.
 
 ## Installation
 
@@ -55,6 +55,12 @@ file.dat
     "size": 70600000,
     "sha1": "ad7fb868e59c495f355d83f61da1c32cc21571cf"
 }
+
+#### You can also pipe the file content ####
+> kachery-cat sha1://ad7fb868e59c495f355d83f61da1c32cc21571cf/file.dat > file.dat
+
+#### Or a portion (byte range) thereof ####
+> kachery-cat sha1://ad7fb868e59c495f355d83f61da1c32cc21571cf/file.dat --start 0 --end 180000 > file_portion.dat
 ```
 
 Basic usage examples for directories:
@@ -133,6 +139,7 @@ txt = ka.load_text(p_text)
 obj = ka.load_object(p_obj)
 array = ka.load_npy(p_npy)
 local_path = ka.load_file(p_file)
+bytes0 = ka.load_bytes(p_file, start=0, end=180000)
 dir_content = ka.read_dir(p_dir)
 txt2 = ka.load_text(p_dir + '/some_file_in_the_dir.txt')
 ```
@@ -147,7 +154,8 @@ import numpy as np
 
 # See section below on setting environment variables
 ka.set_config(
-    use_remote=True
+    download=True,
+    upload=True
 )
 
 #### The following will now upload to the remote kachery database ####
@@ -158,7 +166,7 @@ p_text = ka.store_text('some text')
 txt = ka.load_text(p_text)
 ```
 
-# Environment variables
+## Environment variables
 
 Set the following environment variables to determine which kachery server to connect to when using the upload / download capabilities above.
 
@@ -168,16 +176,22 @@ KACHERY_CHANNEL='name-of-channel'
 KACHERY_PASSWORD='password-for-channel'
 ```
 
-# Hosting a kachery server
+## Hosting a kachery server
 
 To host a kachery server you will need to create a directory
 with a kachery.json configuration file inside. For an example
-configuration file, see [server/example_kachery.json](server/example_kachery.json).
+configuration file, see [server/example_kachery.json](server/example_kachery.json). It is possible to configure multiple password-protected channels in order to balance the usage limits for different subsets of users. For example, you may want some subset of users to have download (but not upload) access.
 
 You can either use docker or NodeJS 12.x.x to run the server.
 The easiest is to use docker.
 
 For docker instructions, see [server/docker_instructions.txt](server/docker_instructions.txt).
+
+## License
+
+Apache 2.0 - see the LICENSE file
+
+Please acknowledge the authors if you fork this repository or make a derivative work. Ideally you should colaborate and contribute your improvements back to this repo.
 
 # Authors
 

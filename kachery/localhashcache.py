@@ -25,7 +25,7 @@ class LocalHashCache:
             return self._directory
         else:
             if 'KACHERY_CACHE_DIR' in os.environ:
-                return os.path.join(os.getenv('KACHERY_CACHE_DIR'), '{}-cache'.format(self._algorithm))
+                return os.path.join(str(os.getenv('KACHERY_CACHE_DIR')), '{}-cache'.format(self._algorithm))
             else:
                 if self._algorithm == 'sha1':
                     return os.getenv('SHA1_CACHE_DIR', os.getenv('KBUCKET_CACHE_DIR', '/tmp/sha1-cache'))
@@ -200,11 +200,10 @@ class LocalHashCache:
             print('Warning: problem writing .record.json file: ' + path0)
 
         path1 = self._get_path(hash=hash1, create=True, directory=self.directory()) + '.hints.json'
+        hints: Union[dict, None] = None
         if os.path.exists(path1):
             hints = _read_json_file(path1, delete_on_error=True)
-        else:
-            hints = None
-        if not hints:
+        if hints is None:
             hints = dict(files=[])
         hints['files'].append(obj)
         try:
