@@ -30,23 +30,19 @@ _hash_caches = dict(
 )
 
 def set_config(*,
-        download: Union[bool, None]=None,
-        download_only: Union[bool, None]=None,
-        upload: Union[bool, None]=None,
-        upload_only: Union[bool, None]=None,
+        download=False,
+        download_only=False,
+        upload=False,
+        upload_only=False,
         channel: Union[str, None]=None,
         password: Union[str, None]=None,
         algorithm: Union[str, None]=None,
         url: Union[str, None]=None
 ) -> None:
-    if download is not None:
-        _global_config['download'] = download
-    if download_only is not None:
-        _global_config['download_only'] = download_only
-    if upload is not None:
-        _global_config['upload'] = upload
-    if upload_only is not None:
-        _global_config['upload_only'] = upload_only
+    _global_config['download'] = download
+    _global_config['download_only'] = download_only
+    _global_config['upload'] = upload
+    _global_config['upload_only'] = upload_only
     if channel is not None:
         _global_config['channel'] = channel
     if password is not None:
@@ -609,6 +605,9 @@ def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Un
         'Range': 'bytes={}-{}'.format(start, end-1)
     }
     bb = io.BytesIO()
+    timer = time.time()
+    if (end - start > 10000) and (not write_to_stdout):
+        print('Downloading {} of {}'.format(_format_file_size(end - start), url))
     response = requests.get(url, headers=headers, stream=True)
     for chunk in response.iter_content(chunk_size=5120):
         if chunk:  # filter out keep-alive new chunks
@@ -616,7 +615,29 @@ def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Un
                 sys.stdout.buffer.write(chunk)
             else:
                 bb.write(chunk)
+    elapsed = time.time() - timer
+    if (end - start > 10000) and (not write_to_stdout):
+        print('Downloaded {} in {} sec from {}'.format(_format_file_size(end - start), elapsed, url))
+
     if write_to_stdout:
         return None
     else:
         return bb.getvalue()
+
+# thanks: https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
+
+def _format_file_size(size: Optional[int]) -> str:
+    if not size:
+        return 'Unknown'
+    if size <= 1024:
+        return '{} B'.format(size)
+    return _sizeof_fmt(size)
+
+
+def _sizeof_fmt(num: int, suffix='B') -> str:
+    num_float = float(num)
+    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num_float) < 1024.0:
+            return "%3.1f %s%s" % (num_float, unit, suffix)
+        num_float /= 1024.0
+    return "%.1f %s%s" % (num_float, 'Yi', suffix)
