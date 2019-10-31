@@ -21,7 +21,8 @@ _global_config=dict(
     download=False,
     download_only=False,
     upload=False,
-    upload_only=False
+    upload_only=False,
+    verbose=False
 )
 
 _hash_caches = dict(
@@ -37,7 +38,8 @@ def set_config(*,
         channel: Union[str, None]=None,
         password: Union[str, None]=None,
         algorithm: Union[str, None]=None,
-        url: Union[str, None]=None
+        url: Union[str, None]=None,
+        verbose: Union[str, None]=None
 ) -> None:
     _global_config['download'] = download
     _global_config['download_only'] = download_only
@@ -51,6 +53,8 @@ def set_config(*,
         _global_config['algorithm'] = algorithm
     if url is not None:
         _global_config['url'] = url
+    if verbose is not None:
+        _global_config['verbose'] = verbose
 
 def get_config() -> dict:
     return _load_config()
@@ -148,7 +152,30 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
             return _load_bytes_from_local_file(path, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
         else:
             return None
-    
+
+def open_file(path: str, block_size=4096, **kwargs):
+    config = _load_config(**kwargs)
+    verbose = config['verbose']
+    info = get_file_info(path, **kwargs)
+    if info is None:
+        raise Exception('Unable to find file: {}'.format(path))
+    if 'path' in info:
+        if verbose:
+            print('opening from path', info['path'])
+        return open(info['path'], 'rb')
+    elif 'url' in info:
+        if verbose:
+            print('opening from url', info['url'])
+        return _open_remote_file(info['url'], block_size=block_size, **kwargs)
+    else:
+        raise Exception('Unexpected info')
+
+def _open_remote_file(url, block_size, **kwargs):
+    try:
+        import fsspec
+    except:
+        raise Exception('It appears that fsspec is not installed. Try "pip install fsspec"')
+    return fsspec.open(url, 'rb', block_size=block_size)
 
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
