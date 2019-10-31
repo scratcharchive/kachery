@@ -7,7 +7,7 @@ from .steady_download_and_compute_hash import steady_download_and_compute_hash
 import random
 import time
 from .filelock import FileLock
-import mtlogging
+# import mtlogging
 from typing import Optional, List, Any, Dict, Tuple, Union
 
 # TODO: implement cleanup() for LocalHashCache
@@ -146,7 +146,7 @@ class LocalHashCache:
 
         return path0
 
-    @mtlogging.log()
+    # @mtlogging.log()
     def copyFileToCache(self, path: str) -> Tuple[str, str]:
         hash0 = self.computeFileHash(path)
         assert hash0 is not None
@@ -241,7 +241,7 @@ class LocalHashCache:
             return os.path.join(path0, hash), altpaths
 
 
-@mtlogging.log()
+# @mtlogging.log()
 def _compute_file_hash(path: str, algorithm: str) -> Optional[str]:
     if not os.path.exists(path):
         return None
@@ -290,7 +290,7 @@ def _safe_remove_file(fname: str) -> None:
         print('Warning: unable to remove file that we thought existed: ' + fname)
 
 
-@mtlogging.log()
+# @mtlogging.log()
 def _read_json_file(path: str, *, delete_on_error: bool=False) -> Any:
     with FileLock(path + '.lock', exclusive=False):
         try:
@@ -327,7 +327,7 @@ def _rename_or_copy(path1: str, path2: str) -> None:
             raise Exception('Problem renaming or copying file: {} -> {}'.format(path1, path2))
 
 
-@mtlogging.log()
+# @mtlogging.log()
 def _rename_file(path1: str, path2: str, remove_if_exists: bool) -> None:
     if os.path.abspath(path1) == os.path.abspath(path2):
         return
