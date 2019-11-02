@@ -37,18 +37,12 @@ def main():
             raise Exception('You must specify a channel either using the --channel (-c) flag or by setting the KACHERY_CHANNEL environment variable')
         if not password:
             raise Exception('You must specify a password either using the --password (-p) flag or by setting the KACHERY_PASSWORD environment variable')
-        if args.upload:
-            ka.set_config(
-                upload=True
-            )
-        if args.upload_only:
-            ka.set_config(
-                upload_only=True
-            )
         ka.set_config(
             url=url,
             channel=channel,
-            password=password
+            password=password,
+            upload=args.upload or False,
+            upload_only=args.upload_only or False
         )
     elif args.url or args.channel or args.password:
         raise Exception('You must specify either --upload (-u) or --upload-only (-uo) when using these options.')

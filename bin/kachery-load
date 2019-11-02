@@ -32,18 +32,12 @@ def main():
             raise Exception('You must specify a channel either using the --channel (-c) flag or by setting the KACHERY_CHANNEL environment variable')
         if not password:
             raise Exception('You must specify a password either using the --password (-p) flag or by setting the KACHERY_PASSWORD environment variable')
-        if args.download:
-            ka.set_config(
-                download=True
-            )
-        if args.download_only:
-            ka.set_config(
-                download_only=True
-            )
         ka.set_config(
             url=url,
             channel=channel,
-            password=password
+            password=password,
+            download=args.download or False,
+            download_only=args.download_only or False
         )
     elif args.url or args.channel or args.password:
         raise Exception('You must specify either --download (-d) or --download-only (-do) when using these options.')
