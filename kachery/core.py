@@ -239,6 +239,11 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
 def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=False, **kwargs) -> Union[str, None]:
     if basename is None:
         basename = os.path.basename(path)
+    if _is_hash_url(path):
+        path2 = load_file(path, **kwargs)
+        if path2 is None:
+            raise Exception('Unable to load file (in store_file): {}'.format(path))
+        path = str(path2)
     config = _load_config(**kwargs)
     algorithm = config['algorithm']
     hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
