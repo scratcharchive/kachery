@@ -1,0 +1,22 @@
+{
+    "configurations": {
+        "flatiron_neuro_readonly": {
+            "url": "http://132.249.245.245:24342",
+            "channel": "public",
+            "password": "public",
+            "download": true,
+            "download_only": false,
+            "upload": false,
+            "upload_only": false
+        },
+        "flatiron_neuro_readwrite": {
+            "url": "http://132.249.245.245:24342",
+            "channel": "neuro",
+            "password": {"env": "KACHERY_FLATIRON_NEURO_PASSWORD"},
+            "download": true,
+            "download_only": false,
+            "upload": true,
+            "upload_only": false
+        }
+    }
+}
