@@ -89,6 +89,16 @@ def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
                 return ret
         if config['download'] or config['download_only']:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
+            if size0 == 0:
+                # This is an empty file, we handle it differently because the server has trouble
+                fname_empty = load_file(str(store_text('', algorithm=str(algorithm), upload=False, upload_only=False)), download=False, download_only=False)
+                if fname_empty is None:
+                    raise Exception('Unexpected fname_empty is None')
+                if dest:
+                    shutil.copyfile(str(fname_empty), dest)
+                    return dest
+                return fname_empty
+
             if url0:
                 assert algorithm is not None
                 assert hash0 is not None
@@ -139,6 +149,9 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
                 return _load_bytes_from_local_file(local_fname, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
         if config['download'] or config['download_only']:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
+            if size0 == 0:
+                # This is an empty file, we handle it differently because the server has trouble
+                return bytes([])
             if url0:
                 assert algorithm is not None
                 assert hash0 is not None
@@ -193,6 +206,12 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
                 return ret
         if config['download'] or config['download_only']:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
+            if size0 == 0:
+                # This is an empty file, we handle it differently because the server has trouble
+                return dict(
+                    url='empty-file',
+                    size=0
+                )
             if url0:
                 assert algorithm is not None
                 assert hash0 is not None
@@ -328,6 +347,10 @@ def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None]
         if hash0 is None:
             return None, None, None, None
         assert algorithm is not None
+        if hash0 == _hash_of_string('', algorithm=algorithm):
+            # This is an empty file, we handle it differently because the server has trouble
+            return None, algorithm, hash0, 0
+            
         url_check: str = _form_check_url(hash=hash0, algorithm=algorithm, config=config)
         check_resp: dict = _http_get_json(url_check)
         if not check_resp['success']:
@@ -404,8 +427,11 @@ def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
 
 def _upload_local_file(path: str, *, hash: str, algorithm: str, config: dict) -> None:
     size0 = os.path.getsize(path)
+    if size0 == 0:
+        # don't upload an empty file. The server cannot handle it - and we'll just take care of this case separately
+        return
 
-    url_ch, _, __, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
+    url_ch, _, _, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
     if url_ch is not None:
         # already on the remote server
         if size_ch != size0:
@@ -478,6 +504,12 @@ def _parse_hash_url(url: str) -> Tuple[str, str, str, str]:
 def _sha1_of_string(txt: str) -> str:
     hh = hashlib.sha1(txt.encode('utf-8'))
     ret = hh.hexdigest()
+    return ret
+
+def _hash_of_string(txt: str, *, algorithm) -> str:
+    hh1 = getattr(hashlib, algorithm)
+    hh2 = hh1(txt.encode('utf-8'))
+    ret = hh2.hexdigest()
     return ret
 
 
@@ -650,21 +682,3 @@ def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Un
         return None
     else:
         return bb.getvalue()
-
-# thanks: https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
-
-def _format_file_size(size: Optional[int]) -> str:
-    if not size:
-        return 'Unknown'
-    if size <= 1024:
-        return '{} B'.format(size)
-    return _sizeof_fmt(size)
-
-
-def _sizeof_fmt(num: int, suffix='B') -> str:
-    num_float = float(num)
-    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
-        if abs(num_float) < 1024.0:
-            return "%3.1f %s%s" % (num_float, unit, suffix)
-        num_float /= 1024.0
-    return "%.1f %s%s" % (num_float, 'Yi', suffix)

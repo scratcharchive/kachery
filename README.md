@@ -191,8 +191,14 @@ For docker instructions, see [server/docker_instructions.txt](server/docker_inst
 
 Apache 2.0 - see the LICENSE file
 
-Please acknowledge the authors if you fork this repository or make a derivative work. Ideally you should colaborate and contribute your improvements back to this repo.
+Please acknowledge the authors if you fork this repository or make a derivative
+work. I'd prefer if you could collaborate and contribute your improvements back to
+this repo.
 
-# Authors
+## Authors
 
 Jeremy Magland, Center for Computational Mathematics, Flatiron Institute
+
+## Help wanted
+
+Seeking co-developers and testers.

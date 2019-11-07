@@ -33,7 +33,7 @@ export default class KacheryTaskRegulator {
             return channel.approveUploadTask(numBytes, req);
         }
         else {
-            throw new Error(`Unexpected name in approveTask: ${name}`);
+            throw new Error(`Unexpected taskName in approveTask: ${taskName}`);
         }
     }
     finalizeTask(taskName, channelName, numBytes, approvalObject) {
@@ -51,7 +51,7 @@ export default class KacheryTaskRegulator {
             return channel.finalizeUploadTask(numBytes, approvalObject);
         }
         else {
-            throw new Error(`Unexpected name in finalizeTask: ${name}`);
+            throw new Error(`Unexpected taskName in finalizeTask: ${taskName}`);
         }
     }
 }

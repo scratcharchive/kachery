@@ -9,7 +9,7 @@ import KacheryIndexer from './KacheryIndexer.js';
 import fs from 'fs';
 
 export default class KacheryServer {
-    constructor(storageDir, regulator) {
+    constructor(storageDir) {
         const config = readJsonFile(storageDir + '/kachery.json');
         mkdirIfNeeded(storageDir + '/sha1-cache');
         mkdirIfNeeded(storageDir + '/md5-cache');
