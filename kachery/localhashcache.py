@@ -113,7 +113,8 @@ class LocalHashCache:
                 raise Exception(
                     'size of downloaded file does not match expected {} {} <> {}'.format(url, size_b, size))
         if hash_b != hash:
-            _safe_remove_file(path_tmp)
+            #_safe_remove_file(path_tmp)
+            print(path_tmp)
             raise Exception(
                 'hash of downloaded file does not match expected {} {} <> {}'.format(url, hash_b, hash))
         if alternate_target_path:

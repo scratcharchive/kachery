@@ -1,0 +1,29 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import argparse
+import time
+import kachery as ka
+
+def main():
+    old_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
+    parser = argparse.ArgumentParser(description='Load a directory from the local hash cache or optionally from a remote kachery database.')
+    parser.add_argument('path', help='Hash path to directory (e.g. sha1://906faceaf874dd64e81de0048f36f4bab0f1f171)')
+    parser.add_argument('--dest', help='The destination for the directory', required=True)
+    ka._add_download_args(parser)
+
+    args = parser.parse_args()
+    path = args.path
+
+    ka._set_download_config_from_parsed_args(args)
+
+    ka.load_dir(path=path, dest=args.dest)
+
+    sys.stdout = old_stdout
+    print('Done.')
+
+if __name__ == "__main__":
+    main()

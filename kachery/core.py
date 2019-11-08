@@ -6,11 +6,13 @@ import json
 import hashlib
 import tempfile
 import time
+import stat
 import requests
 import urllib.request as request
 import shutil
 import io
 import sys
+from .filelock import FileLock
 from .localhashcache import LocalHashCache
 
 _global_config=dict(
@@ -18,11 +20,14 @@ _global_config=dict(
     channel=os.getenv('KACHERY_CHANNEL', None),
     password=os.getenv('KACHERY_PASSWORD', None),
     algorithm='sha1',
-    download=False,
-    download_only=False,
-    upload=False,
-    upload_only=False,
-    verbose=False
+    load_from='local', # local, remote, remote_only
+    store_to='local', # local, remote, remote_only
+    verbose=False,
+    dummy=dict()  # to make mypy happy
+)
+
+_global_data: dict=dict(
+    preset_config=None
 )
 
 _hash_caches = dict(
@@ -31,20 +36,23 @@ _hash_caches = dict(
 )
 
 def set_config(*,
-        download=False,
-        download_only=False,
-        upload=False,
-        upload_only=False,
+        preset=None,
+        load_from=None,
+        store_to=None,
         channel: Union[str, None]=None,
-        password: Union[str, None]=None,
+        password: Union[str, dict, None]=None,
         algorithm: Union[str, None]=None,
         url: Union[str, None]=None,
         verbose: Union[str, None]=None
 ) -> None:
-    _global_config['download'] = download
-    _global_config['download_only'] = download_only
-    _global_config['upload'] = upload
-    _global_config['upload_only'] = upload_only
+    if preset is not None:
+        configs = _load_preset_configs()
+        if preset in configs['configurations']:
+            set_config(**configs['configurations'][preset])
+    if load_from is not None:
+        _global_config['load_from'] = load_from
+    if store_to is not None:
+        _global_config['store_to'] = store_to
     if channel is not None:
         _global_config['channel'] = channel
     if password is not None:
@@ -58,6 +66,35 @@ def set_config(*,
 
 def get_config() -> dict:
     return _load_config()
+
+def _load_preset_configs() -> dict:
+    if _global_data['preset_config'] is None:
+        config_path = os.path.join(_config_dir(), 'preset_configuration.json')
+        if os.path.exists(config_path) and _file_age_sec(config_path) <= 60:
+            obj = _read_json_file(config_path)
+        else:
+            url = 'https://raw.githubusercontent.com/flatironinstitute/kachery/config/config/configurations_1.json'
+            try:
+                obj = _http_get_json(url)
+                _write_json_file(obj, config_path)
+            except:
+                print('Warning: unable to load preset configurations from: {}'.format(url))
+                if os.path.exists(config_path):
+                    obj = _read_json_file(config_path)
+                else:
+                    raise Exception('Unable to load preset configurations')
+        _global_data['preset_config'] = obj
+    return dict(_global_data['preset_config'])
+
+def _file_age_sec(pathname):
+    return time.time() - os.stat(pathname)[stat.ST_MTIME]
+
+def _config_dir():
+    homedir = os.path.expanduser("~")
+    ret = os.path.join(homedir, '.kachery')
+    if not os.path.exists(ret):
+        os.mkdir(ret)
+    return ret
 
 def _load_config(**kwargs) -> dict:
     if 'config' in kwargs:
@@ -80,18 +117,18 @@ def _is_hash_url(path):
 def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
     if _is_hash_url(path):
-        if not config['download_only']:
+        if config['load_from'] != 'remote_only':
             ret, _, _ = _find_file_locally(path, config=config)
             if ret:
                 if dest:
                     shutil.copyfile(ret, dest)
                     return dest
                 return ret
-        if config['download'] or config['download_only']:
+        if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
-                fname_empty = load_file(str(store_text('', algorithm=str(algorithm), upload=False, upload_only=False)), download=False, download_only=False)
+                fname_empty = load_file(str(store_text('', algorithm=str(algorithm), store_to='local')), load_from='local')
                 if fname_empty is None:
                     raise Exception('Unexpected fname_empty is None')
                 if dest:
@@ -143,11 +180,11 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
         if local_fname:
             return _load_bytes_from_local_file(local_fname, config=config, write_to_stdout=write_to_stdout)
     if _is_hash_url(path):
-        if not config['download_only']:
+        if config['load_from'] != 'remote_only':
             local_fname, _, _ = _find_file_locally(path, config=config)
             if local_fname:
                 return _load_bytes_from_local_file(local_fname, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
-        if config['download'] or config['download_only']:
+        if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
@@ -183,6 +220,18 @@ def open_file(path: str, block_size=4096, **kwargs):
     else:
         raise Exception('Unexpected info')
 
+def load_dir(path: str, dest: str, **kwargs)-> None:
+    print('Loading directory {} -> {}'.format(path, dest))
+    if os.path.exists(dest):
+        raise Exception('Destination directory already exists: {}'.format(dest))
+    os.mkdir(dest)
+    config = _load_config(**kwargs)
+    dd = read_dir(path=path, recursive=False, config=config)
+    for filename in dd['files']:
+        load_file(path + '/' + filename, dest=os.path.join(dest, filename), config=config)
+    for dirname in dd['dirs']:
+        load_dir(path + '/' + dirname, dest=os.path.join(dest, dirname), config=config)
+
 def _open_remote_file(url, block_size, **kwargs):
     try:
         import fsspec
@@ -193,7 +242,7 @@ def _open_remote_file(url, block_size, **kwargs):
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
     if _is_hash_url(path):
-        if not config['download_only']:
+        if config['load_from'] != 'remote_only':
             fname, hash1, algorithm1 = _find_file_locally(path, config=config)
             if fname:
                 assert hash1 is not None
@@ -204,7 +253,7 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
                 )
                 ret[algorithm1] = hash1
                 return ret
-        if config['download'] or config['download_only']:
+        if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
@@ -249,9 +298,9 @@ def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=
     hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
     if not hash0:
         raise Exception('Unable to compute {} hash of file: {}'.format(algorithm, path))
-    if not config['upload_only']:
+    if config['store_to'] != 'remote_only':
         _store_local_file_in_cache(path, algorithm=algorithm, hash=hash0, config=config)
-    if (config['upload'] or config['upload_only']) and (not git_annex_mode):
+    if (config['store_to'] == 'remote' or config['store_to'] == 'remote_only') and (not git_annex_mode):
         _upload_local_file(path, algorithm=algorithm, hash=hash0, config=config)
     return '{}://{}/{}'.format(algorithm, hash0, basename)
     
@@ -390,7 +439,17 @@ def _get_config_channel(config):
 
 def _get_config_password(config):
     if config['password']:
-        return config['password']
+        if type(config['password']) == str:
+            return config['password']
+        elif type(config['password']) == dict:
+            if 'env' in config['password']:
+                env0 = config['password']['env']
+                if env0 in os.environ:
+                    return os.environ[env0]
+                else:
+                    raise Exception('You need to set the {} environment variable'.format(env0))
+            else:
+                raise Exception('Unexpected password config')
     else:
         if 'KACHERY_PASSWORD' in os.environ:
             return os.environ['KACHERY_PASSWORD']
@@ -687,3 +746,26 @@ def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Un
         return None
     else:
         return bb.getvalue()
+
+def _read_json_file(path: str, *, delete_on_error: bool=False) -> Union[dict, None]:
+    with FileLock(path + '.lock', exclusive=False):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except:
+            if delete_on_error:
+                print('Warning: Unable to read or parse json file. Deleting: ' + path)
+                try:
+                    os.unlink(path)
+                except:
+                    print('Warning: unable to delete file: ' + path)
+                    pass
+            else:
+                print('Warning: Unable to read or parse json file: ' + path)
+            return None
+
+
+def _write_json_file(obj: object, path: str) -> None:
+    with FileLock(path + '.lock', exclusive=True):
+        with open(path, 'w') as f:
+            json.dump(obj, f)

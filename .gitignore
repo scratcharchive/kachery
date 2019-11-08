@@ -6,3 +6,6 @@ test_data
 *.egg-info
 generated
 dist
+.vscode
+from_cole
+.ipynb_checkpoints

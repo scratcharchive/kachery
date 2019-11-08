@@ -91,13 +91,12 @@ To share files, simply upload them to a remote kachery server using the --upload
 
 ```bash
 #### Store a directory in a remote database ####
-# See section below on setting environment variables
-> kachery-store --upload /path/to/directory/ds001
+# Note that you need to set the KACHERY_DEFAULT_PASSWORD environment variable for this to work properly
+> kachery-store --upload /path/to/directory/ds001 --preset default_readwrite
 sha1dir://4d329a296cfe0b3142d57226ff881b6572c3ed20.ds001
 
 #### Now somebody else on a different computer can retrieve it ####
-# See section below on setting environment variables
-> kachery-ls --download sha1dir://4d329a296cfe0b3142d57226ff881b6572c3ed20.ds001
+> kachery-ls --download sha1dir://4d329a296cfe0b3142d57226ff881b6572c3ed20.ds001 --preset default_readonly
 subdir1/
 subdir2/
 file1.txt
@@ -152,28 +151,17 @@ import numpy as np
 
 #### Configure the kachery client to upload/download from a remote kachery database ####
 
-# See section below on setting environment variables
+# In order for this to work, you need to set the appropriate KACHERY_DEFAULT_PASSWORD environment variable
 ka.set_config(
-    download=True,
-    upload=True
+    preset='default_readwrite'
 )
 
 #### The following will now upload to the remote kachery database ####
 p_text = ka.store_text('some text')
 
-#### And later someone on a different computer can retrieve that data ####
+#### And later someone on a different computer can retrieve that data (using the proper configuration) ####
 
 txt = ka.load_text(p_text)
-```
-
-## Environment variables
-
-Set the following environment variables to determine which kachery server to connect to when using the upload / download capabilities above.
-
-```
-KACHERY_URL='http://ip-address-or-host:port'
-KACHERY_CHANNEL='name-of-channel'
-KACHERY_PASSWORD='password-for-channel'
 ```
 
 ## Hosting a kachery server
