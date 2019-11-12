@@ -83,7 +83,8 @@ class KacheryManager {
         this._component.pythonInterface.onMessage((msg) => {
             if (msg.name === 'loadedText') {
                 this._retrievedText[msg.path] = {
-                    text: msg.text
+                    text: msg.text,
+                    error: msg.error
                 };
             }
         });

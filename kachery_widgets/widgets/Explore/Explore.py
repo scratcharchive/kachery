@@ -31,7 +31,16 @@ class Explore:
         # process custom messages from JavaScript here
         # In .js file, use this.pythonInterface.sendMessage({...})
         if msg['name'] == 'loadText':
-            text = ka.load_text(msg['path'])
+            try:
+                text = ka.load_text(msg['path'])
+            except:
+                self._send_message(dict(
+                    name='loadedText',
+                    path=msg['path'],
+                    text=None,
+                    error='Problem loading. Perhaps this is not a text file.'
+                ))
+                return
             self._send_message(dict(
                 name='loadedText',
                 path=msg['path'],
