@@ -12,6 +12,7 @@ import urllib.request as request
 import shutil
 import io
 import sys
+import math
 from .filelock import FileLock
 from .localhashcache import LocalHashCache
 
@@ -216,7 +217,7 @@ def open_file(path: str, block_size=10 * 1024 * 1024, **kwargs):
     elif 'url' in info:
         if verbose:
             print('opening from url', info['url'])
-        return _open_remote_file(info['url'], block_size=block_size, **kwargs)
+        return _open_remote_file(info['url'], size=info['size'], block_size=block_size, config=config)
     else:
         raise Exception('Unexpected info')
 
@@ -232,12 +233,50 @@ def load_dir(path: str, dest: str, **kwargs)-> None:
     for dirname in dd['dirs']:
         load_dir(path + '/' + dirname, dest=os.path.join(dest, dirname), config=config)
 
-def _open_remote_file(url, block_size, **kwargs):
-    try:
-        import fsspec
-    except:
-        raise Exception('It appears that fsspec is not installed. Try "pip install fsspec"')
-    return fsspec.open(url, 'rb', block_size=block_size)
+def _open_remote_file(url, *, size, block_size, config):
+    # try:
+    #     import fsspec
+    # except:
+    #     raise Exception('It appears that fsspec is not installed. Try "pip install fsspec"')
+    # return fsspec.open(url, 'rb', block_size=block_size)
+    return RemoteFile(url, size=size, block_size=block_size, config=config)
+
+class RemoteFile:
+    def __init__(self, url, *, size, block_size, config):
+        self._url = url
+        self._size = size
+        self._block_size = block_size
+        self._config = config
+        self._current_pos = 0
+        self._blocks = dict()
+    def __enter__(self):
+        return self
+    def __exit__(self, type, value: object, traceback) -> None:
+        pass
+    def seek(self, offset):
+        self._current_pos = offset
+    def read(self, size):
+        p1 = self._current_pos
+        p2 = self._current_pos + size
+        return self._read(p1, p2)
+    def _read(self, p1, p2):
+        b_start = math.floor(p1 / self._block_size)
+        b_end = math.floor((p2 - 1) / self._block_size)
+        if b_start == b_end:
+            block = self._load_block(b_start)
+            return block[p1 - b_start * self._block_size:p2 - b_start * self._block_size]
+        else:
+            buffers = []
+            buffers.append(self._read(p1, (b_start + 1) * self._block_size ))
+            for bb in range(b_start + 1, b_end):
+                buffers.append(self._read(bb * self._block_size, (bb + 1) * self._block_size))
+            buffers.append(self._read(b_end * self._block_size, p2))
+            return b''.join(buffers)
+    def _load_block(self, block_num):
+        if block_num not in self._blocks:
+            self._blocks[block_num] = _load_bytes_from_remote_file(url=self._url, config=self._config, size=self._size, start=block_num * self._block_size, end=min((block_num + 1) * self._block_size, self._size))
+        return self._blocks[block_num]
+
 
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
