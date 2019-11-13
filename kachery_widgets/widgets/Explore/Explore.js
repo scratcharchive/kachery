@@ -10,10 +10,11 @@ export default class Explore extends Component {
         super(props);
         this.state = {
             // javascript state
-            dir_path: null,
+            path: null,
             
             // python state
             dir_content: null,
+            file_content: null,
             status: '',
             status_message: '',
 
@@ -31,21 +32,23 @@ export default class Explore extends Component {
         });
         // Use this.pythonInterface.setState(...) to pass data to the python backend
         this.pythonInterface.setState({
-            dir_path: this.props.dir_path
+            path: this.props.path,
         });
     }
     componentDidUpdate() {
 
     }
     componentWillUnmount() {
-        this.pythonInterface.stop();
+        if (this.pythonInterface) {
+            this.pythonInterface.stop();
+        }
     }
     _handlePathChanged = (path) => {
         this.setState({
-            pathHistory: [...this.state.pathHistory, this.state.dir_path]
+            pathHistory: [...this.state.pathHistory, this.state.path]
         });
         this.pythonInterface.setState({
-            dir_path: path
+            path: path
         });
     }
     _handleBackButton = () => {
@@ -58,15 +61,17 @@ export default class Explore extends Component {
             pathHistory: pathHistory
         });
         this.pythonInterface.setState({
-            dir_path: path0
+            path: path0
         });
     }
     render() {
-        const { dir_path, dir_content, pathHistory } = this.state;
+        const { path, dir_content, file_content, pathHistory } = this.state;
+        console.log('-----------', dir_content, file_content);
         return (
             <ExploreWidget
-                dirPath={dir_path || this.props.dir_path}
+                path={path || this.props.path}
                 dirContent={dir_content}
+                fileContent={file_content}
                 pathHistory={pathHistory}
                 onPathChanged={this._handlePathChanged}
                 onBackButton={this._handleBackButton}

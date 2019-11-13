@@ -152,7 +152,10 @@ class ItemView extends Component {
     }
 
     render() {
-        const item = this.props.item || {};
+        let item = this.props.item;
+        if (!item) {
+            return <span />;
+        }
         const { pluginComponents } = this.state;
         return (
             <div style={{ padding: '10px' }}>

@@ -10,21 +10,24 @@ class Explore:
         self._set_status('running', 'Running Explore')
 
         self._set_state(
-            dir_content=None
+            dir_content=None,
+            file_content=None
         )
 
         print('running', state)
-        dir_content = ka.read_dir(state['dir_path'])
+        if state.get('path'):
+            try:
+                dir_content = ka.read_dir(state['path'])
+                file_content = None
+            except:
+                dir_content = None
+                file_content = ka.load_text(state['path'])
+            self._set_state(
+                dir_content=dir_content,
+                file_content=file_content
+            )    
 
-        # Processing code goes here
-        # The state argument contains the state set from the javacript code
-        # In .js file, use this.pythonInterface.setState({...})
-
-        self._set_state(
-            dir_content=dir_content
-        )
-
-        self._set_status('finished', 'Finished Explore ' + state['dir_path'])
+        self._set_status('finished', 'Finished Explore ' + state['path'])
 
     def on_message(self, msg):
         ka.set_config(preset='default_readonly')

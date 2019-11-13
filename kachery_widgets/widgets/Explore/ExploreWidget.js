@@ -20,23 +20,38 @@ export default class ExploreWidget extends Component {
         this._updateRootNode();
     }
     componentDidUpdate(prevProps) {
-        if ((this.props.dirContent !== prevProps.dirContent) || (this.props.dirPath !== prevProps.dirPath)) {
+        if ((this.props.dirContent !== prevProps.dirContent) || (this.props.fileContent !== prevProps.fileContent) || (this.props.path !== prevProps.path)) {
             this._updateRootNode();
         }
     }
     _updateRootNode() {
-        if (!this.props.dirContent) {
-            this.setState({
-                rootNode: null,
-                selectedNodePath: null,
-                selectedItem: null
-            });
-            return;
-        }
-        let rootNode = this.nodeCreator.createDirNode(this.props.dirContent, '', this.props.dirPath);
         this.setState({
-            rootNode: rootNode
+            rootNode: null,
+            selectedNodePath: null,
+            selectedItem: null
         });
+        if (this.props.dirContent) {
+            let rootNode = this.nodeCreator.createDirNode(this.props.dirContent, '', this.props.path);
+            this.setState({
+                rootNode: rootNode
+            });
+        }
+        else if (this.props.fileContent) {
+            let obj = null;
+            try {
+                obj = JSON.parse(this.props.fileContent);
+            }
+            catch(err) {
+                console.warn('Unable to parse JSON file content.');
+            }
+            if (obj) {
+                let rootNode = this.nodeCreator.createObjectNode(obj);
+                this.setState({
+                    rootNode: rootNode
+                });
+            }
+        }
+        
     }
     _handleNodeSelected = (node) => {
         if (node) {
@@ -69,7 +84,7 @@ export default class ExploreWidget extends Component {
 
         const pathBar = (
             <PathBar
-                path={this.props.dirPath}
+                path={this.props.path}
                 pathHistory={this.props.pathHistory}
                 onPathChanged={this._handlePathChanged}
                 onBackButton={this._handleBackButton}

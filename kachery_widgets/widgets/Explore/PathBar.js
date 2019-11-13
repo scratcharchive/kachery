@@ -54,7 +54,8 @@ class PathBar extends Component {
     }
 
     render() {
-        const inputLength = Math.ceil(Math.max(50, this.state.inputPath.length) / 10) * 10;
+        let inputPath = this.state.inputPath || '';
+        const inputLength = Math.ceil(Math.max(50, inputPath.length) / 10) * 10;
         return (
             <Toolbar>
                 <IconButton onClick={this.handleBackButton} disableRipple={true}
@@ -70,11 +71,11 @@ class PathBar extends Component {
                     onChange={this.handlePathInputChanged}
                     onKeyDown={this.handlePathInputKeyDown}
                     style={{ maxWidth: `${inputLength}ch`, minWidth: `${inputLength}ch` }}
-                    value={this.state.inputPath}
+                    value={inputPath}
                 />
                 <IconButton
                     onClick={this.handleUpdate}
-                    disabled={this.props.path === this.state.inputPath}
+                    disabled={this.props.path === inputPath}
                 >
                     <MdRefresh />
                 </IconButton>
