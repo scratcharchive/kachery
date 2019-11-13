@@ -203,7 +203,7 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
         else:
             return None
 
-def open_file(path: str, block_size=4096, **kwargs):
+def open_file(path: str, block_size=10 * 1024 * 1024, **kwargs):
     config = _load_config(**kwargs)
     verbose = config['verbose']
     info = get_file_info(path, **kwargs)
