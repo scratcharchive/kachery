@@ -189,15 +189,28 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
             if local_fname:
                 return _load_bytes_from_local_file(local_fname, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
         if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
-            url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
+            url0, algorithm0, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
                 return bytes([])
             if url0:
-                assert algorithm is not None
+                assert algorithm0 is not None
                 assert hash0 is not None
                 assert size0 is not None
-                return _load_bytes_from_remote_file(url=url0, size=size0, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
+                code: Dict[str, int]=dict(
+                    start=start,
+                    end=end
+                )
+                code[algorithm0] = hash0
+                code_hash = _sha1_of_object(code)
+                hc = _hash_caches[algorithm0]
+                path0 = hc.find_file_by_code(code=code_hash)
+                if path0:
+                    return load_bytes(path0, start=None, end=None, write_to_stdout=write_to_stdout, **kwargs)
+                bytes0 = _load_bytes_from_remote_file(url=url0, size=size0, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
+                if bytes0 is not None:
+                    hc.store_file_by_code(code=code_hash, data=bytes0)
+                return bytes0
             else:
                 return None
         return None
@@ -270,7 +283,7 @@ class _RemoteFile:
         self._block_size = block_size
         self._config = config
         self._current_pos = 0
-        self._block_paths = dict()
+        self._block_paths: Dicst[str] = dict()
         self._current_block_num = None
         self._current_block_file = None
     def __enter__(self):
