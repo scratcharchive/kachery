@@ -88,6 +88,18 @@ class LocalHashCache:
                     'Warning: failed to load hints json file, or invalid file. Removing: ' + hints_fname)
                 _safe_remove_file(hints_fname)
         return None
+    
+    def find_file_by_code(self, *, code: str) -> Optional[str]:
+        path = self._get_path_by_code(code=code, create=False)
+        if os.path.exists(path):
+            return path
+        return None
+    
+    def store_file_by_code(self, *, code: str, data: bytes) -> str:
+        path = self._get_path_by_code(code=code, create=True)
+        with open(path, 'wb') as f:
+            f.write(data)
+        return path
 
     def downloadFile(self, url: str, hash: str, target_path: Optional[str]=None, size: Optional[int]=None, verbose: bool=False, show_progress: bool=False) -> Optional[str]:
         alternate_target_path = False
@@ -240,7 +252,19 @@ class LocalHashCache:
             for altdir in alt_dirs:
                 altpaths.append(os.path.join(altdir, path1, hash))
             return os.path.join(path0, hash), altpaths
-
+    
+    def _get_path_by_code(self, *, code: str, create: bool) -> str:
+        directory = self.directory()
+        path1 = os.path.join(code[0], code[1:3])
+        path0 = os.path.join(str(directory), path1)
+        if create:
+            if not os.path.exists(path0):
+                try:
+                    os.makedirs(path0)
+                except:
+                    if not os.path.exists(path0):
+                        raise Exception('Unable to make directory: ' + path0)
+        return os.path.join(path0, code)
 
 # @mtlogging.log()
 def _compute_file_hash(path: str, algorithm: str) -> Optional[str]:

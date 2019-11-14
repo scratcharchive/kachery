@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from typing import Union, Tuple, Optional, List
+from typing import Union, Tuple, Optional, List, Dict
 import simplejson
 import json
 import hashlib
@@ -48,8 +48,9 @@ def set_config(*,
 ) -> None:
     if preset is not None:
         configs = _load_preset_configs()
-        if preset in configs['configurations']:
-            set_config(**configs['configurations'][preset])
+        configurations = configs['configurations']
+        if preset in configurations:
+            set_config(**configurations[preset])
     if load_from is not None:
         _global_config['load_from'] = load_from
     if store_to is not None:
@@ -68,7 +69,7 @@ def set_config(*,
 def get_config() -> dict:
     return _load_config()
 
-def _load_preset_configs() -> dict:
+def _load_preset_configs():
     if _global_data['preset_config'] is None:
         config_path = os.path.join(_config_dir(), 'preset_configuration.json')
         if os.path.exists(config_path) and _file_age_sec(config_path) <= 60:
@@ -85,7 +86,9 @@ def _load_preset_configs() -> dict:
                 else:
                     raise Exception('Unable to load preset configurations')
         _global_data['preset_config'] = obj
-    return dict(_global_data['preset_config'])
+    ret = _global_data['preset_config']
+    assert ret is not None
+    return dict(ret)
 
 def _file_age_sec(pathname):
     return time.time() - os.stat(pathname)[stat.ST_MTIME]
@@ -204,6 +207,32 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
         else:
             return None
 
+def _load_remote_file_block(path: str, *, url: str, size: int, config: dict, start: int, end: int):
+    if _is_hash_url(path):
+        hash0, algorithm0 = _determine_file_hash_from_url(url=path, config=config)
+    else:
+        hash0 = _compute_local_file_hash(path, config=config, algorithm='sha1')
+        algorithm0 = 'sha1'
+    if hash0 is None:
+        raise Exception('Unable to compute hash of file: {}'.format(path))
+    assert algorithm0 is not None
+    code: Dict[str, int]=dict(
+        start=start,
+        end=end
+    )
+    code[algorithm0] = hash0
+    code_hash = _sha1_of_object(code)
+    hc = _hash_caches[algorithm0]
+    path0 = hc.find_file_by_code(code=code_hash)
+    if path0:
+        return path0
+    bytes0 = _load_bytes_from_remote_file(url=url, config=config, size=size, start=start, end=end)
+    if not bytes0:
+        return None
+    return hc.store_file_by_code(code=code_hash, data=bytes0)
+    
+
+
 def open_file(path: str, block_size=10 * 1024 * 1024, **kwargs):
     config = _load_config(**kwargs)
     verbose = config['verbose']
@@ -217,7 +246,7 @@ def open_file(path: str, block_size=10 * 1024 * 1024, **kwargs):
     elif 'url' in info:
         if verbose:
             print('opening from url', info['url'])
-        return _open_remote_file(info['url'], size=info['size'], block_size=block_size, config=config)
+        return _RemoteFile(path, url=info['url'], size=info['size'], block_size=block_size, config=config)
     else:
         raise Exception('Unexpected info')
 
@@ -233,22 +262,15 @@ def load_dir(path: str, dest: str, **kwargs)-> None:
     for dirname in dd['dirs']:
         load_dir(path + '/' + dirname, dest=os.path.join(dest, dirname), config=config)
 
-def _open_remote_file(url, *, size, block_size, config):
-    # try:
-    #     import fsspec
-    # except:
-    #     raise Exception('It appears that fsspec is not installed. Try "pip install fsspec"')
-    # return fsspec.open(url, 'rb', block_size=block_size)
-    return RemoteFile(url, size=size, block_size=block_size, config=config)
-
-class RemoteFile:
-    def __init__(self, url, *, size, block_size, config):
+class _RemoteFile:
+    def __init__(self, path: str, *, url: str, size: int, block_size: int, config: dict):
+        self._path = path
         self._url = url
         self._size = size
         self._block_size = block_size
         self._config = config
         self._current_pos = 0
-        self._blocks = dict()
+        self._block_paths = dict()
     def __enter__(self):
         return self
     def __exit__(self, type, value: object, traceback) -> None:
@@ -263,8 +285,10 @@ class RemoteFile:
         b_start = math.floor(p1 / self._block_size)
         b_end = math.floor((p2 - 1) / self._block_size)
         if b_start == b_end:
-            block = self._load_block(b_start)
-            return block[p1 - b_start * self._block_size:p2 - b_start * self._block_size]
+            block_path = self._get_block_path(b_start)
+            if block_path is None:
+                raise Exception('Unable to load block of remote file: {}'.format(self._path))
+            return _load_bytes_from_local_file(local_fname=block_path, start=p1 - b_start * self._block_size, end=p2 - b_start * self._block_size, config=self._config)
         else:
             buffers = []
             buffers.append(self._read(p1, (b_start + 1) * self._block_size ))
@@ -272,10 +296,14 @@ class RemoteFile:
                 buffers.append(self._read(bb * self._block_size, (bb + 1) * self._block_size))
             buffers.append(self._read(b_end * self._block_size, p2))
             return b''.join(buffers)
-    def _load_block(self, block_num):
-        if block_num not in self._blocks:
-            self._blocks[block_num] = _load_bytes_from_remote_file(url=self._url, config=self._config, size=self._size, start=block_num * self._block_size, end=min((block_num + 1) * self._block_size, self._size))
-        return self._blocks[block_num]
+    def _get_block_path(self, block_num):
+        if block_num == 0 and self._block_size >= self._size:
+            # in this case we are loading the entire file
+            # we need to put load_from='remote' in case the config has remote_only (a bit tricky)
+            return load_file(path=self._path, config=self._config, load_from='remote')
+        if block_num not in self._block_paths:
+            self._block_paths[block_num] = _load_remote_file_block(path=self._path, url=self._url, size=self._size, config=self._config, start=block_num * self._block_size, end=min((block_num + 1) * self._block_size, self._size))
+        return self._block_paths[block_num]
 
 
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
