@@ -271,10 +271,13 @@ class _RemoteFile:
         self._config = config
         self._current_pos = 0
         self._block_paths = dict()
+        self._current_block_num = None
+        self._current_block_file = None
     def __enter__(self):
         return self
     def __exit__(self, type, value: object, traceback) -> None:
-        pass
+        if self._current_block_file is not None:
+            self._current_block_file.close()
     def seek(self, offset):
         self._current_pos = offset
     def read(self, size):
@@ -285,10 +288,10 @@ class _RemoteFile:
         b_start = math.floor(p1 / self._block_size)
         b_end = math.floor((p2 - 1) / self._block_size)
         if b_start == b_end:
-            block_path = self._get_block_path(b_start)
-            if block_path is None:
-                raise Exception('Unable to load block of remote file: {}'.format(self._path))
-            return _load_bytes_from_local_file(local_fname=block_path, start=p1 - b_start * self._block_size, end=p2 - b_start * self._block_size, config=self._config)
+            self._load_block_file(b_start)
+            f = self._current_block_file
+            f.seek(p1 - b_start * self._block_size)
+            return f.read(p2 - p1)
         else:
             buffers = []
             buffers.append(self._read(p1, (b_start + 1) * self._block_size ))
@@ -304,7 +307,14 @@ class _RemoteFile:
         if block_num not in self._block_paths:
             self._block_paths[block_num] = _load_remote_file_block(path=self._path, url=self._url, size=self._size, config=self._config, start=block_num * self._block_size, end=min((block_num + 1) * self._block_size, self._size))
         return self._block_paths[block_num]
-
+    def _load_block_file(self, block_num):
+        if self._current_block_num == block_num:
+            return
+        block_path = self._get_block_path(block_num)
+        if self._current_block_file is not None:
+            self._current_block_file.close()
+        self._current_block_file = open(block_path, 'rb')
+        self._current_block_num = block_num
 
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
@@ -797,7 +807,7 @@ def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Un
     bb = io.BytesIO()
     timer = time.time()
     if (end - start > 10000) and (not write_to_stdout):
-        print('Downloading {} of {}'.format(_format_file_size(end - start), url))
+        print('Downloading {} of {} (bytes {}-{})'.format(_format_file_size(end - start), url, start, end))
     response = requests.get(url, headers=headers, stream=True)
     for chunk in response.iter_content(chunk_size=5120):
         if chunk:  # filter out keep-alive new chunks
