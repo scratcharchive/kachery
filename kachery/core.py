@@ -13,18 +13,25 @@ import shutil
 import io
 import sys
 import math
+from copy import deepcopy
 from .filelock import FileLock
 from .localhashcache import LocalHashCache
 
 _global_config=dict(
-    url=os.getenv('KACHERY_URL', None),
-    channel=os.getenv('KACHERY_CHANNEL', None),
-    password=os.getenv('KACHERY_PASSWORD', None),
+    to=dict(
+        url=None,
+        channel=None,
+        password=None
+    ),
+    fr=dict(
+        url=None,
+        channel=None,
+        password=None
+    ),
+    from_remote_only=False,
+    to_remote_only=False,
     algorithm='sha1',
-    load_from='local', # local, remote, remote_only
-    store_to='local', # local, remote, remote_only
-    verbose=False,
-    dummy=dict()  # to make mypy happy
+    verbose=False
 )
 
 _global_data: dict=dict(
@@ -37,34 +44,39 @@ _hash_caches = dict(
 )
 
 def set_config(*,
-        preset=None,
-        load_from=None,
-        store_to=None,
-        channel: Union[str, None]=None,
-        password: Union[str, dict, None]=None,
+        to: Union[dict, str, None]=None,
+        fr: Union[dict, str, None]=None,
+        from_remote_only: Union[bool, None]=None,
+        to_remote_only: Union[bool, None]=None,
+        verbose: Union[bool, None]=None,
         algorithm: Union[str, None]=None,
-        url: Union[str, None]=None,
-        verbose: Union[str, None]=None
 ) -> None:
-    if preset is not None:
-        configs = _load_preset_configs()
-        configurations = configs['configurations']
-        if preset in configurations:
-            set_config(**configurations[preset])
-    if load_from is not None:
-        _global_config['load_from'] = load_from
-    if store_to is not None:
-        _global_config['store_to'] = store_to
-    if channel is not None:
-        _global_config['channel'] = channel
-    if password is not None:
-        _global_config['password'] = password
-    if algorithm is not None:
-        _global_config['algorithm'] = algorithm
-    if url is not None:
-        _global_config['url'] = url
+    if to is not None:
+        if type(to) == str:
+            set_config(to=_get_preset_config(to))
+        else:
+            _global_config['to'] = deepcopy(to)
+    if fr is not None:
+        if type(fr) == str:
+            set_config(fr=_get_preset_config(fr))
+        else:
+            _global_config['fr'] = deepcopy(fr)
+    if from_remote_only is not None:
+        _global_config['from_remote_only'] = from_remote_only
+    if to_remote_only is not None:
+        _global_config['to_remote_only'] = to_remote_only
     if verbose is not None:
         _global_config['verbose'] = verbose
+    if algorithm is not None:
+        _global_config['algorithm'] = algorithm
+
+def _get_preset_config(name):
+    configs = _load_preset_configs()
+    configurations = configs['configurations']
+    if name in configurations:
+        return deepcopy(configurations[name])
+    else:
+        raise Exception('Configuration not found: {}'.format(name))
 
 def get_config() -> dict:
     return _load_config()
@@ -75,7 +87,7 @@ def _load_preset_configs():
         if os.path.exists(config_path) and _file_age_sec(config_path) <= 60:
             obj = _read_json_file(config_path)
         else:
-            url = 'https://raw.githubusercontent.com/flatironinstitute/kachery/config/config/configurations_1.json'
+            url = 'https://raw.githubusercontent.com/flatironinstitute/kachery/config/config/config_2019a.json'
             try:
                 obj = _http_get_json(url)
                 _write_json_file(obj, config_path)
@@ -104,11 +116,12 @@ def _load_config(**kwargs) -> dict:
     if 'config' in kwargs:
         ret = kwargs['config']
     else:
-        ret = dict()
-        for key, val in _global_config.items():
-            ret[key] = val
+        ret = deepcopy(_global_config)
     for key, val in kwargs.items():
-        ret[key] = val
+        if key in ['to', 'fr'] and type(val) == str:
+            ret[key] = _get_preset_config(val)
+        else:
+            ret[key] = val
     return ret
 
 def _is_hash_url(path):
@@ -120,15 +133,16 @@ def _is_hash_url(path):
 
 def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
+    fr = config['fr']
     if _is_hash_url(path):
-        if config['load_from'] != 'remote_only':
+        if not config['from_remote_only']:
             ret, _, _ = _find_file_locally(path, config=config)
             if ret:
                 if dest:
                     shutil.copyfile(ret, dest)
                     return dest
                 return ret
-        if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
+        if fr['url'] is not None:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
@@ -179,16 +193,17 @@ def load_npy(path: str, **kwargs) -> Union[np.ndarray, None]:
 
 def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs) -> Union[bytes, None]:
     config = _load_config(**kwargs)
+    fr = config['fr']
     if start is None and end is None:
         local_fname = load_file(path=path, config=config)
         if local_fname:
             return _load_bytes_from_local_file(local_fname, config=config, write_to_stdout=write_to_stdout)
     if _is_hash_url(path):
-        if config['load_from'] != 'remote_only':
+        if not config['from_remote_only']:
             local_fname, _, _ = _find_file_locally(path, config=config)
             if local_fname:
                 return _load_bytes_from_local_file(local_fname, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
-        if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
+        if fr['url'] is not None:
             url0, algorithm0, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
@@ -316,7 +331,7 @@ class _RemoteFile:
         if block_num == 0 and self._block_size >= self._size:
             # in this case we are loading the entire file
             # we need to put load_from='remote' in case the config has remote_only (a bit tricky)
-            return load_file(path=self._path, config=self._config, load_from='remote')
+            return load_file(path=self._path, config=self._config, from_remote_only=False)
         if block_num not in self._block_paths:
             self._block_paths[block_num] = _load_remote_file_block(path=self._path, url=self._url, size=self._size, config=self._config, start=block_num * self._block_size, end=min((block_num + 1) * self._block_size, self._size))
         return self._block_paths[block_num]
@@ -331,8 +346,9 @@ class _RemoteFile:
 
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
+    fr = config['fr']
     if _is_hash_url(path):
-        if config['load_from'] != 'remote_only':
+        if not config['from_remote_only']:
             fname, hash1, algorithm1 = _find_file_locally(path, config=config)
             if fname:
                 assert hash1 is not None
@@ -343,7 +359,7 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
                 )
                 ret[algorithm1] = hash1
                 return ret
-        if config['load_from'] == 'remote' or config['load_from'] == 'remote_only':
+        if fr['url'] is not None:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
@@ -384,13 +400,14 @@ def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=
             raise Exception('Unable to load file (in store_file): {}'.format(path))
         path = str(path2)
     config = _load_config(**kwargs)
+    to = config['to']
     algorithm = config['algorithm']
     hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
     if not hash0:
         raise Exception('Unable to compute {} hash of file: {}'.format(algorithm, path))
-    if config['store_to'] != 'remote_only':
+    if not config['to_remote_only']:
         _store_local_file_in_cache(path, algorithm=algorithm, hash=hash0, config=config)
-    if (config['store_to'] == 'remote' or config['store_to'] == 'remote_only') and (not git_annex_mode):
+    if (to['url'] is not None) and (not git_annex_mode):
         _upload_local_file(path, algorithm=algorithm, hash=hash0, config=config)
     return '{}://{}/{}'.format(algorithm, hash0, basename)
     
@@ -509,73 +526,52 @@ def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None]
     else:
         raise Exception('Unexpected')
 
-def _get_config_url(config):
-    if config['url']:
-        return config['url']
-    else:
-        if 'KACHERY_URL' in os.environ:
-            return os.environ['KACHERY_URL']
-        else:
-            raise Exception('You need to configure the kachery url or set the KACHERY_URL environment variable.')
-
-def _get_config_channel(config):
-    if config['channel']:
-        return config['channel']
-    else:
-        if 'KACHERY_CHANNEL' in os.environ:
-            return os.environ['KACHERY_CHANNEL']
-        else:
-            raise Exception('You need to configure the kachery channel or set the KACHERY_CHANNEL environment variable.')
-
-def _get_config_password(config):
-    if config['password']:
-        if type(config['password']) == str:
-            return config['password']
-        elif type(config['password']) == dict:
-            if 'env' in config['password']:
-                env0 = config['password']['env']
-                if env0 in os.environ:
-                    return os.environ[env0]
-                else:
-                    raise Exception('You need to set the {} environment variable'.format(env0))
+def _get_password(x):
+    if type(x) == str:
+        return x
+    elif type(x) == dict:
+        if 'env' in x:
+            env0 = x['env']
+            if env0 in os.environ:
+                return os.environ[env0]
             else:
-                raise Exception('Unexpected password config')
-    else:
-        if 'KACHERY_PASSWORD' in os.environ:
-            return os.environ['KACHERY_PASSWORD']
+                raise Exception('You need to set the {} environment variable'.format(env0))
         else:
-            raise Exception('You need to configure the kachery password or set the KACHERY_PASSWORD environment variable.')
+            raise Exception('Unexpected password config')
 
 def _form_download_url(*, algorithm: str, hash: str, config: dict) -> str:
-    url = _get_config_url(config)
-    channel = _get_config_channel(config)
+    fr = config['fr']
+    url = fr['url']
+    channel = fr['channel']
     signature = _sha1_of_object(dict(
         algorithm=algorithm,
         hash=hash,
         name='download',
-        password=_get_config_password(config),
+        password=_get_password(fr['password']),
     ))
     return '{}/get/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
 def _form_check_url(*, algorithm: str, hash: str, config: dict) -> str:
-    url = _get_config_url(config)
-    channel = _get_config_channel(config)
+    fr = config['fr']
+    url = fr['url']
+    channel = fr['channel']
     signature = _sha1_of_object(dict(
         algorithm=algorithm,
         hash=hash,
         name='check',
-        password=_get_config_password(config)
+        password=_get_password(fr['password'])
     ))
     return '{}/check/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
 def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
-    url = _get_config_url(config)
-    channel = _get_config_channel(config)
+    to = config['to']
+    url = to['url']
+    channel = to['channel']
     signature = _sha1_of_object(dict(
         algorithm=algorithm,
         hash=hash,
         name='upload',
-        password=_get_config_password(config)
+        password=_get_password(to['password'])
     ))
     return '{}/set/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 

@@ -3,11 +3,8 @@ import numpy as np
 
 def test_remote():
     ka.set_config(
-        download_only=True,
-        upload_only=True,
-        url='http://localhost:8081',
-        channel='ccm',
-        password='romet'
+        to='default_readwrite',
+        fr='default_readwrite'
     )
     
     for alg in ['sha1', 'md5']:
