@@ -7,8 +7,8 @@
         },
         "default_readwrite": {
             "url": "http://132.249.245.245:24342",
-            "channel": "public",
-            "password": "public"
+            "channel": "neuro",
+            "password": {"env": "KACHERY_DEFAULT_PASSWORD"}
         }
     }
 }
