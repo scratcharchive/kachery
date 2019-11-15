@@ -23,6 +23,8 @@ This provides many advantages as will be seen.
 
 ## Installation
 
+First, if you do not already have numpy, install it via `pip install numpy` or similar. Then,
+
 ```
 pip install --upgrade kachery
 ```
