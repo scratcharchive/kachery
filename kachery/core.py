@@ -73,6 +73,11 @@ def set_config(*,
 def _get_preset_config(name):
     configs = _load_preset_configs()
     configurations = configs['configurations']
+    configurations['local'] = dict(
+        url=None,
+        channel=None,
+        password=None
+    )
     if name in configurations:
         return deepcopy(configurations[name])
     else:
@@ -581,7 +586,9 @@ def _upload_local_file(path: str, *, hash: str, algorithm: str, config: dict) ->
         # don't upload an empty file. The server cannot handle it - and we'll just take care of this case separately
         return
 
-    url_ch, _, _, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config)
+    config2 = deepcopy(config)
+    config2['fr'] = config2['to']
+    url_ch, _, _, size_ch = _check_remote_file('{}://{}'.format(algorithm, hash), config=config2)
     if url_ch is not None:
         # already on the remote server
         if size_ch != size0:

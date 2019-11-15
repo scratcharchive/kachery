@@ -11,12 +11,12 @@ def test_remote():
         ka.set_config(algorithm=alg)
         for pass0 in range(1, 3):
             if pass0 == 1:
-                ka.set_config(download_only=True, upload_only=True)
+                ka.set_config(from_remote_only=True, to_remote_only=True)
             elif pass0 == 2:
-                ka.set_config(download_only=False, upload_only=False)
-            _test_store_text('abctest')
-            _test_store_object(dict(a=1, b=2, c=[1, 2, 3]))
-            _test_store_npy(np.ones((12, 12)))
+                ka.set_config(from_remote_only=False, to_remote_only=False)
+            _test_store_text('abctest2')
+            _test_store_object(dict(a=1, b=2, c=[1, 2, 3, 4]))
+            _test_store_npy(np.ones((12, 14)))
     
     a = ka.load_text('sha1://906faceaf874dd64e81de0048f36f4bab0f1f171')
     print(a)
