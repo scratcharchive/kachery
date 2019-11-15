@@ -1,0 +1,14 @@
+{
+    "configurations": {
+        "default_readonly": {
+            "url": "http://132.249.245.245:24342",
+            "channel": "public",
+            "password": "public"
+        },
+        "default_readwrite": {
+            "url": "http://132.249.245.245:24342",
+            "channel": "public",
+            "password": "public"
+        }
+    }
+}
