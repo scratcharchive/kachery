@@ -158,7 +158,7 @@ def _resolve_key_path(path: str, *, config: dict):
     if fr['url'] is None:
         hc = _hash_caches['sha1']
         path0 = hc.find_file_by_code(code=hash0)
-        if path0 None:
+        if path0 is None:
             return None
         with open(path0, 'r') as f:
             resolved_value = f.read()
