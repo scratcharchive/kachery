@@ -89,23 +89,24 @@ other_file2.txt
 Content of other_file1.txt
 ```
 
-To share files, simply upload them to a remote kachery server using the --upload or --upload-only flag as in the following example:
+To share files, simply upload them to a remote kachery server using the --to flag as in the following example:
 
 ```bash
 #### Store a directory in a remote database ####
 # Note that you need to set the KACHERY_DEFAULT_PASSWORD environment variable for this to work properly
-> kachery-store --upload /path/to/directory/ds001 --preset default_readwrite
+> kachery-store /path/to/directory/ds001 --to default_readwrite
 sha1dir://4d329a296cfe0b3142d57226ff881b6572c3ed20.ds001
 
 #### Now somebody else on a different computer can retrieve it ####
-> kachery-ls --download sha1dir://4d329a296cfe0b3142d57226ff881b6572c3ed20.ds001 --preset default_readonly
+# No password is needed in this case
+> kachery-ls sha1dir://4d329a296cfe0b3142d57226ff881b6572c3ed20.ds001 --fr default_readonly
 subdir1/
 subdir2/
 file1.txt
 file2.csv
 ```
 
-More detailed documentation on these commands by using the --help flag:
+Get more detailed documentation on these commands by using the --help flag:
 
 ```bash
 kachery-store --help
@@ -155,14 +156,17 @@ import numpy as np
 
 # In order for this to work, you need to set the appropriate KACHERY_DEFAULT_PASSWORD environment variable
 ka.set_config(
-    preset='default_readwrite'
+    fr='default_readwrite',
+    to='default_readwrite'
 )
 
 #### The following will now upload to the remote kachery database ####
 p_text = ka.store_text('some text')
 
 #### And later someone on a different computer can retrieve that data (using the proper configuration) ####
-
+ka.set_config(
+    fr='default_readonly'
+)
 txt = ka.load_text(p_text)
 ```
 

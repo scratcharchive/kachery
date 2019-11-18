@@ -136,9 +136,58 @@ def _is_hash_url(path):
             return True
     return False
 
+def _is_key_url(path):
+    if path.startswith('key://') or path.startswith('key://'):
+        return True
+    return False
+
+def _resolve_key_path(path: str, *, config: dict):
+    protocol, algorithm, hash0, additional_path = _parse_kachery_url(path)
+    if len(hash0) != 40:
+        # This is important -- don't change this hastily.
+        raise Exception('Expected length of key hash is 40. Got {}.'.format(len(hash0)))
+    if algorithm != 'key':
+        raise Exception('Unexpected key path: {}'.format(path))
+    if protocol.endswith('dir'):
+        a = _resolve_key_path('key://' + hash0)
+        if a is None:
+            return None
+        protocol2, algorithm2, hash2, additional_path2 = _parse_kachery_url(a)
+        return '{}dir://{}/{}'.format(algorithm2, hash2, additional_path)
+    fr = config['fr']
+    if fr['url'] is None:
+        hc = _hash_caches['sha1']
+        path0 = hc.find_file_by_code(code=hash0)
+        if path0 None:
+            return None
+        with open(path0, 'r') as f:
+            resolved_value = f.read()
+        if not _is_valid_resolved_value(resolved_value):
+            raise Exception('Invalid value associated with key {}'.format(hash0))
+        return '{}/{}'.format(resolved_value, additional_path)
+    else:
+        val = _resolve_remote_key(hash0, config=config)
+        if val is None:
+            return None
+        if not _is_valid_resolved_value(resolved_value):
+            raise Exception('Invalid value associated with key {}'.format(hash0))
+        return '{}/{}'.format(val, additional_path)
+
+def _is_valid_resolved_value(val):
+    protocol0, algorithm0, hash0, additional_path0 = _parse_kachery_url(val)
+    if protocol0 is None:
+        return False
+    if additional_path:
+        return False
+    return True
+
 def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
+    if _is_key_url(path):
+        path = _resolve_key_path(path, config=config)
+        if path is None:
+            return None
     if _is_hash_url(path):
         if not config['from_remote_only']:
             ret, _, _ = _find_file_locally(path, config=config)
@@ -199,6 +248,10 @@ def load_npy(path: str, **kwargs) -> Union[np.ndarray, None]:
 def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs) -> Union[bytes, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
+    if _is_key_url(path):
+        path = _resolve_key_path(path, config=config)
+        if path is None:
+            return None
     if start is None and end is None:
         local_fname = load_file(path=path, config=config)
         if local_fname:
@@ -352,6 +405,10 @@ class _RemoteFile:
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
+    if _is_key_url(path):
+        path = _resolve_key_path(path, config=config)
+        if path is None:
+            return None
     if _is_hash_url(path):
         if not config['from_remote_only']:
             fname, hash1, algorithm1 = _find_file_locally(path, config=config)
@@ -453,7 +510,7 @@ def store_dir(dirpath: str, label: Union[str, None]=None, git_annex_mode: bool=F
 def read_dir(path: str, *, recursive: bool=True, git_annex_mode: bool=False, **kwargs):
     config = _load_config(**kwargs)
     if _is_hash_url(path):
-        protocol, algorithm, hash0, additional_path = _parse_hash_url(path)
+        protocol, algorithm, hash0, additional_path = _parse_kachery_url(path)
         if not protocol.endswith('dir'):
             raise Exception('Not a directory: {}'.format(path))
         dd = load_object('{}://{}'.format(algorithm, hash0), config=config)
@@ -506,6 +563,14 @@ def _find_file_locally(path: str, *, config: dict) -> Tuple[Union[str, None], Un
         return path, hash1, config['algorithm']
     else:
         return None, None, None
+
+def _resolve_remote_key(key: str, *, config: dict):
+    url_get_key: str = _form_get_key_url(key=key, config=config)
+    get_key_resp: dict = _http_get_json(url_get_key)
+    if not get_key_resp['success']:
+        print('Warning: Problem in get key: ' + get_key_resp['error'])
+        return None
+    return get_key_resp['value']
 
 def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[str, None], Union[int, None]]:
     if _is_hash_url(hash_url):
@@ -568,6 +633,18 @@ def _form_check_url(*, algorithm: str, hash: str, config: dict) -> str:
     ))
     return '{}/check/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
 
+def _form_get_key_url(*, key: str, config: dict) -> str:
+    fr = config['fr']
+    url = fr['url']
+    channel = fr['channel']
+    signature = _sha1_of_object(dict(
+        key=key,
+        name='get/key',
+        password=_get_password(fr['password'])
+    ))
+    return '{}/get/key/{}?channel={}&signature={}'.format(url, key, channel, signature)
+
+
 def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
     to = config['to']
     url = to['url']
@@ -611,7 +688,7 @@ def _upload_local_file(path: str, *, hash: str, algorithm: str, config: dict) ->
         raise Exception('Problem posting file data: ' + resp_obj.get('error', ''))
 
 def _determine_file_hash_from_url(url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None]]:
-    protocol, algorithm, hash0, additional_path = _parse_hash_url(url)
+    protocol, algorithm, hash0, additional_path = _parse_kachery_url(url)
     if not protocol.endswith('dir'):
         return hash0, algorithm
     dd = load_object('{}://{}'.format(algorithm, hash0))
@@ -643,7 +720,7 @@ def _determine_file_hash_from_url(url: str, *, config: dict) -> Tuple[Union[str,
         ii = ii + 1
     return None, None
 
-def _parse_hash_url(url: str) -> Tuple[str, str, str, str]:
+def _parse_kachery_url(url: str) -> Tuple[str, str, str, str]:
     list0 = url.split('/')
     protocol = list0[0].replace(':', '')
     hash0 = list0[2]
@@ -651,7 +728,7 @@ def _parse_hash_url(url: str) -> Tuple[str, str, str, str]:
         hash0 = hash0.split('.')[0]
     additional_path = '/'.join(list0[3:])
     algorithm = None
-    for alg in ['sha1', 'md5']:
+    for alg in ['sha1', 'md5', 'key']:
         if protocol.startswith(alg):
             algorithm = alg
     if algorithm is None:
