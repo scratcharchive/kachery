@@ -89,19 +89,31 @@ def get_config() -> dict:
 def _load_preset_configs():
     if _global_data['preset_config'] is None:
         config_path = os.path.join(_config_dir(), 'preset_configuration.json')
-        if os.path.exists(config_path) and _file_age_sec(config_path) <= 60:
-            obj = _read_json_file(config_path)
-        else:
+        try_download = True
+        if os.path.exists(config_path):
+            obj = None
+            try:
+                obj0 = _read_json_file(config_path)
+                if obj0 and obj0.get('configurations'):
+                    obj = obj0
+            except:
+                pass
+            if obj is not None and _file_age_sec(config_path) <= 60:
+                try_download = False
+        if try_download:
             url = 'https://raw.githubusercontent.com/flatironinstitute/kachery/config/config/config_2019a.json'
             try:
-                obj = _http_get_json(url)
-                _write_json_file(obj, config_path)
+                obj0 = _http_get_json(url)
+                if obj0 and obj0.get('configurations', None):
+                    obj = obj0
+                    _write_json_file(obj, config_path)
+                else:
+                    print(obj0.get('error', ''))
+                    print('Warning: Problem loading preset configurations from: {}'.format(url))
             except:
                 print('Warning: unable to load preset configurations from: {}'.format(url))
-                if os.path.exists(config_path):
-                    obj = _read_json_file(config_path)
-                else:
-                    raise Exception('Unable to load preset configurations')
+        if obj is None:
+            raise Exception('Unable to load preset configurations')
         _global_data['preset_config'] = obj
     ret = _global_data['preset_config']
     assert ret is not None
@@ -149,7 +161,7 @@ def _resolve_key_path(path: str, *, config: dict):
     if algorithm != 'key':
         raise Exception('Unexpected key path: {}'.format(path))
     if protocol.endswith('dir'):
-        a = _resolve_key_path('key://' + hash0)
+        a = _resolve_key_path('key://' + hash0, config=config)
         if a is None:
             return None
         protocol2, algorithm2, hash2, additional_path2 = _parse_kachery_url(a)
@@ -177,7 +189,7 @@ def _is_valid_resolved_value(val):
     protocol0, algorithm0, hash0, additional_path0 = _parse_kachery_url(val)
     if protocol0 is None:
         return False
-    if additional_path:
+    if additional_path0:
         return False
     return True
 
@@ -245,7 +257,7 @@ def load_npy(path: str, **kwargs) -> Union[np.ndarray, None]:
         return None
     return np.load(path2)
 
-def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs) -> Union[bytes, None]:
+def load_bytes(path: str, start: Union[int, None]=None, end: Union[int, None]=None, write_to_stdout=False, **kwargs) -> Union[bytes, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
     if _is_key_url(path):
@@ -262,30 +274,42 @@ def load_bytes(path: str, start=None, end=None, write_to_stdout=False, **kwargs)
             if local_fname:
                 return _load_bytes_from_local_file(local_fname, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
         if fr['url'] is not None:
-            url0, algorithm0, hash0, size0 = _check_remote_file(path, config=config)
-            if size0 == 0:
-                # This is an empty file, we handle it differently because the server has trouble
-                return bytes([])
-            if url0:
-                assert algorithm0 is not None
-                assert hash0 is not None
-                assert size0 is not None
-                code: Dict[str, int]=dict(
-                    start=start,
-                    end=end
-                )
-                code[algorithm0] = hash0
-                code_hash = _sha1_of_object(code)
-                hc = _hash_caches[algorithm0]
-                path0 = hc.find_file_by_code(code=code_hash)
-                if path0:
-                    return load_bytes(path0, start=None, end=None, write_to_stdout=write_to_stdout, **kwargs)
-                bytes0 = _load_bytes_from_remote_file(url=url0, size=size0, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
-                if bytes0 is not None:
-                    hc.store_file_by_code(code=code_hash, data=bytes0)
-                return bytes0
-            else:
-                return None
+            if start is None and end is None:
+                path_local = load_file(path, config=config)
+                if path_local is None:
+                    return None
+                return load_bytes(path_local, start=start, end=end, write_to_stdout=write_to_stdout, config=config)
+            if start is None:
+                start = 0
+            if end is None:
+                raise Exception('This case not handled.')
+            with open_file(path, config=config) as f:
+                f.seek(start)
+                return f.read(end - start)
+            # url0, algorithm0, hash0, size0 = _check_remote_file(path, config=config)
+            # if size0 == 0:
+            #     # This is an empty file, we handle it differently because the server has trouble
+            #     return bytes([])
+            # if url0:
+            #     assert algorithm0 is not None
+            #     assert hash0 is not None
+            #     assert size0 is not None
+            #     code: Dict[str, int]=dict(
+            #         start=start,
+            #         end=end
+            #     )
+            #     code[algorithm0] = hash0
+            #     code_hash = _sha1_of_object(code)
+            #     hc = _hash_caches[algorithm0]
+            #     path0 = hc.find_file_by_code(code=code_hash)
+            #     if path0:
+            #         return load_bytes(path0, start=None, end=None, write_to_stdout=write_to_stdout, **kwargs)
+            #     bytes0 = _load_bytes_from_remote_file(url=url0, size=size0, start=start, end=end, config=config, write_to_stdout=write_to_stdout)
+            #     if bytes0 is not None:
+            #         hc.store_file_by_code(code=code_hash, data=bytes0)
+            #     return bytes0
+            # else:
+            #     return None
         return None
     else:
         if os.path.isfile(path):
@@ -356,7 +380,7 @@ class _RemoteFile:
         self._block_size = block_size
         self._config = config
         self._current_pos = 0
-        self._block_paths: Dicst[str] = dict()
+        self._block_paths: Dict[str] = dict()
         self._current_block_num = None
         self._current_block_file = None
     def __enter__(self):
@@ -401,6 +425,13 @@ class _RemoteFile:
             self._current_block_file.close()
         self._current_block_file = open(block_path, 'rb')
         self._current_block_num = block_num
+
+def get_object_hash(obj: dict):
+    return _sha1_of_object(obj)
+
+def get_file_hash(path: str):
+    info = get_file_info(path, algorithm='sha1')
+    return info['sha1']
 
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
@@ -583,7 +614,7 @@ def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None]
             return None, algorithm, hash0, 0
             
         url_check: str = _form_check_url(hash=hash0, algorithm=algorithm, config=config)
-        check_resp: dict = _http_get_json(url_check)
+        check_resp: dict = _http_get_json(url_check, use_cache_on_success=True)
         if not check_resp['success']:
             print('Warning: Problem checking for file: ' + check_resp['error'])
             return None, None, None, None
@@ -751,7 +782,11 @@ def _sha1_of_object(obj: object) -> str:
     txt = json.dumps(obj, sort_keys=True, separators=(',', ':'))
     return _sha1_of_string(txt)
 
-def _http_get_json(url: str, verbose: Optional[bool]=False, retry_delays: Optional[List[float]]=None) -> dict:
+_http_get_cache = dict()
+def _http_get_json(url: str, use_cache_on_success: bool=False, verbose: Optional[bool]=False, retry_delays: Optional[List[float]]=None) -> dict:
+    if use_cache_on_success:
+        if url in _http_get_cache:
+            return _http_get_cache[url]
     timer = time.time()
     if retry_delays is None:
         retry_delays = [0.2, 0.5]
@@ -775,6 +810,9 @@ def _http_get_json(url: str, verbose: Optional[bool]=False, retry_delays: Option
         return dict(success=False, error='Unable to load json from url: ' + url)
     if verbose:
         print('Elapsed time for _http_get_json: {} {}'.format(time.time() - timer, url))
+    if use_cache_on_success:
+        if ret['success']:
+            _http_get_cache[url] = ret
     return ret
 
 # thanks: https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size

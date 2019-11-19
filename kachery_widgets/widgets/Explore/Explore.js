@@ -66,7 +66,6 @@ export default class Explore extends Component {
     }
     render() {
         const { path, dir_content, file_content, pathHistory } = this.state;
-        console.log('-----------', dir_content, file_content);
         return (
             <ExploreWidget
                 path={path || this.props.path}
