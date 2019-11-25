@@ -104,6 +104,7 @@ export default class KacheryServer {
                 this._finalizeTask('upload', req.query.channel, 0, approvalObject);
             }
         });
+        this._app.post('/log/write/:collection')
 
         this._indexer.startIndexing();
     }

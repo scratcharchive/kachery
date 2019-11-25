@@ -31,7 +31,17 @@ _global_config=dict(
     from_remote_only=False,
     to_remote_only=False,
     algorithm='sha1',
-    verbose=False
+    verbose=False,
+    logto=dict(
+        url=None,
+        channel=None,
+        password=None
+    ),
+    logfr=dict(
+        url=None,
+        channel=None,
+        password=None
+    )
 )
 
 _global_data: dict=dict(
@@ -50,6 +60,8 @@ def set_config(*,
         to_remote_only: Union[bool, None]=None,
         verbose: Union[bool, None]=None,
         algorithm: Union[str, None]=None,
+        logto: Union[dict, str, None]=None,
+        logfr: Union[dict, str, None]=None
 ) -> None:
     if to is not None:
         if type(to) == str:
@@ -69,6 +81,16 @@ def set_config(*,
         _global_config['verbose'] = verbose
     if algorithm is not None:
         _global_config['algorithm'] = algorithm
+    if logto is not None:
+        if type(logto) == str:
+            set_config(logto=_get_preset_config(logto))
+        else:
+            _global_config['logto'] = deepcopy(logto)
+    if logfr is not None:
+        if type(logfr) == str:
+            set_config(logfr=_get_preset_config(logfr))
+        else:
+            _global_config['logfr'] = deepcopy(logfr)
 
 def _get_preset_config(name):
     configs = _load_preset_configs()
@@ -148,58 +170,9 @@ def _is_hash_url(path):
             return True
     return False
 
-def _is_key_url(path):
-    if path.startswith('key://') or path.startswith('key://'):
-        return True
-    return False
-
-def _resolve_key_path(path: str, *, config: dict):
-    protocol, algorithm, hash0, additional_path = _parse_kachery_url(path)
-    if len(hash0) != 40:
-        # This is important -- don't change this hastily.
-        raise Exception('Expected length of key hash is 40. Got {}.'.format(len(hash0)))
-    if algorithm != 'key':
-        raise Exception('Unexpected key path: {}'.format(path))
-    if protocol.endswith('dir'):
-        a = _resolve_key_path('key://' + hash0, config=config)
-        if a is None:
-            return None
-        protocol2, algorithm2, hash2, additional_path2 = _parse_kachery_url(a)
-        return '{}dir://{}/{}'.format(algorithm2, hash2, additional_path)
-    fr = config['fr']
-    if fr['url'] is None:
-        hc = _hash_caches['sha1']
-        path0 = hc.find_file_by_code(code=hash0)
-        if path0 is None:
-            return None
-        with open(path0, 'r') as f:
-            resolved_value = f.read()
-        if not _is_valid_resolved_value(resolved_value):
-            raise Exception('Invalid value associated with key {}'.format(hash0))
-        return '{}/{}'.format(resolved_value, additional_path)
-    else:
-        val = _resolve_remote_key(hash0, config=config)
-        if val is None:
-            return None
-        if not _is_valid_resolved_value(resolved_value):
-            raise Exception('Invalid value associated with key {}'.format(hash0))
-        return '{}/{}'.format(val, additional_path)
-
-def _is_valid_resolved_value(val):
-    protocol0, algorithm0, hash0, additional_path0 = _parse_kachery_url(val)
-    if protocol0 is None:
-        return False
-    if additional_path0:
-        return False
-    return True
-
 def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
-    if _is_key_url(path):
-        path = _resolve_key_path(path, config=config)
-        if path is None:
-            return None
     if _is_hash_url(path):
         if not config['from_remote_only']:
             ret, _, _ = _find_file_locally(path, config=config)
@@ -260,10 +233,6 @@ def load_npy(path: str, **kwargs) -> Union[np.ndarray, None]:
 def load_bytes(path: str, start: Union[int, None]=None, end: Union[int, None]=None, write_to_stdout=False, **kwargs) -> Union[bytes, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
-    if _is_key_url(path):
-        path = _resolve_key_path(path, config=config)
-        if path is None:
-            return None
     if start is None and end is None:
         local_fname = load_file(path=path, config=config)
         if local_fname:
@@ -436,10 +405,6 @@ def get_file_hash(path: str):
 def get_file_info(path: str, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
-    if _is_key_url(path):
-        path = _resolve_key_path(path, config=config)
-        if path is None:
-            return None
     if _is_hash_url(path):
         if not config['from_remote_only']:
             fname, hash1, algorithm1 = _find_file_locally(path, config=config)
@@ -595,14 +560,6 @@ def _find_file_locally(path: str, *, config: dict) -> Tuple[Union[str, None], Un
     else:
         return None, None, None
 
-def _resolve_remote_key(key: str, *, config: dict):
-    url_get_key: str = _form_get_key_url(key=key, config=config)
-    get_key_resp: dict = _http_get_json(url_get_key)
-    if not get_key_resp['success']:
-        print('Warning: Problem in get key: ' + get_key_resp['error'])
-        return None
-    return get_key_resp['value']
-
 def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[str, None], Union[int, None]]:
     if _is_hash_url(hash_url):
         hash0, algorithm = _determine_file_hash_from_url(hash_url, config=config)
@@ -663,18 +620,6 @@ def _form_check_url(*, algorithm: str, hash: str, config: dict) -> str:
         password=_get_password(fr['password'])
     ))
     return '{}/check/{}/{}?channel={}&signature={}'.format(url, algorithm, hash, channel, signature)
-
-def _form_get_key_url(*, key: str, config: dict) -> str:
-    fr = config['fr']
-    url = fr['url']
-    channel = fr['channel']
-    signature = _sha1_of_object(dict(
-        key=key,
-        name='get/key',
-        password=_get_password(fr['password'])
-    ))
-    return '{}/get/key/{}?channel={}&signature={}'.format(url, key, channel, signature)
-
 
 def _form_upload_url(*, algorithm: str, hash: str, config: dict) -> str:
     to = config['to']
@@ -766,6 +711,60 @@ def _parse_kachery_url(url: str) -> Tuple[str, str, str, str]:
         raise Exception('Unexpected protocol: {}'.format(protocol))
     return protocol, algorithm, hash0, additional_path
 
+def log_write(message: dict, **kwargs) -> None:
+    config = _load_config(**kwargs)
+    if config['logto'] is not None:
+        _log_write(logto=config['logto'], message=message)
+
+def log_find(query: dict, **kwargs) -> List[dict]:
+    config = _load_config(**kwargs)
+    if config['logfr'] is not None:
+        return _log_find(logfr=config['logfr'], query=query)
+    else:
+        return []
+
+def _log_write(*, logto: dict, message: dict) -> None:
+    url_log_write, data = _form_log_write_url(message=message, logto=logto)
+    write_log_resp: dict = _http_post_json(url_log_write, data=data)
+    if not write_log_resp['success']:
+        raise Exception('Problem writing log: ' + write_log_resp['error'])
+
+def _log_find(*, logfr: dict, query: dict) -> List[dict]:
+    url_log_find, data = _form_log_find_url(query=query, logfr=logfr)
+    query_log_resp: dict = _http_post_json(url_log_find, data=data)
+    if not query_log_resp['success']:
+        raise Exception('Problem querying log: ' + query_log_resp['error'])
+    return query_log_resp['records']
+
+def _form_log_write_url(*, message: dict, logto: dict) -> Tuple(str, dict):
+    data = dict(
+        message=message,
+        time=time.time() - 0
+    )
+    url = logto['url']
+    channel = logto['channel']
+    collection = logto['collection']
+    signature = _sha1_of_object(dict(
+        name='log/write',
+        data=data,
+        password=_get_password(logto['password'])
+    ))
+    return ('{}/log/write/{}?channel={}&signature={}'.format(url, collection, channel, signature), data)
+
+def _form_log_find_url(*, query: dict, logfr: dict) -> Tuple(str, dict):
+    data = dict(
+        query=query
+    )
+    url = logfr['url']
+    channel = logfr['channel']
+    collection = logfr['collection']
+    signature = _sha1_of_object(dict(
+        name='log/query',
+        data=data,
+        password=_get_password(logfr['password'])
+    ))
+    return ('{}/log/find/{}?channel={}&signature={}'.format(url, collection, channel, signature), data)
+
 def _sha1_of_string(txt: str) -> str:
     hh = hashlib.sha1(txt.encode('utf-8'))
     ret = hh.hexdigest()
@@ -839,17 +838,33 @@ def _http_post_file_data(url: str, fname: str, verbose: Optional[bool]=None) -> 
         print('_http_post_file_data::: ' + fname)
     with open(fname, 'rb') as f:
         try:
-            obj = requests.post(url, data=f)
+            req = requests.post(url, data=f)
         except:
             raise Exception('Error posting file data.')
-    if obj.status_code != 200:
+    if req.status_code != 200:
         return dict(
             success=False,
-            error='Error posting file data: {} {}'.format(obj.status_code, obj.content.decode('utf-8'))
+            error='Error posting file data: {} {}'.format(req.status_code, req.content.decode('utf-8'))
         )
     if verbose:
         print('Elapsed time for _http_post_file_Data: {}'.format(time.time() - timer))
-    return json.loads(obj.content)
+    return json.loads(req.content)
+
+def _http_post_json(url: str, data: dict, verbose: Optional[bool]=None) -> dict:
+    timer = time.time()
+    if verbose is None:
+        verbose = (os.environ.get('HTTP_VERBOSE', '') == 'TRUE')
+    if verbose:
+        print('_http_post_json::: ' + url)
+    req = requests.post(url, json=data)
+    if req.status_code != 200:
+        return dict(
+            success=False,
+            error='Error posting json: {} {}'.format(req.status_code, req.content.decode('utf-8'))
+        )
+    if verbose:
+        print('Elapsed time for _http_post_json: {}'.format(time.time() - timer))
+    return json.loads(req.content)
 
 def _read_file_system_dir(path: str, *, recursive: bool, include_hashes: bool, store_files: bool, git_annex_mode: bool, config: dict) -> Union[dict, None]:
     ret: dict = dict(
