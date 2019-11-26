@@ -13,20 +13,25 @@ from typing import Optional, List, Any, Dict, Tuple, Union
 # TODO: implement cleanup() for LocalHashCache
 # removing .record.json and .hints.json files that are no longer relevant
 
+_global = dict(
+    printed_warning = False
+)
 
 class LocalHashCache:
     def __init__(self, *, algorithm):
         self._directory = None
         self._algorithm = algorithm
-        self._alternate_directories = None
 
     def directory(self) -> str:
         if self._directory:
             return self._directory
         else:
-            if 'KACHERY_CACHE_DIR' in os.environ:
-                return os.path.join(str(os.getenv('KACHERY_CACHE_DIR')), '{}-cache'.format(self._algorithm))
+            if 'KACHERY_STORAGE_DIR' in os.environ:
+                return os.path.join(str(os.getenv('KACHERY_STORAGE_DIR')), '{}'.format(self._algorithm))
             else:
+                if not _global['printed_warning']:
+                    print('WARNING: please use the KACHERY_STORAGE_DIR environment variable.')
+                    _global['printed_warning'] = True
                 if self._algorithm == 'sha1':
                     return os.getenv('SHA1_CACHE_DIR', os.getenv('KBUCKET_CACHE_DIR', '/tmp/sha1-cache'))
                 elif self._algorithm == 'md5':
@@ -34,32 +39,15 @@ class LocalHashCache:
                 else:
                     raise Exception('Unexpected algorithm: {}'.format(self._algorithm))
 
-    def alternateDirectories(self) -> List[str]:
-        if self._alternate_directories:
-            return self._alternate_directories
-        else:
-            val = os.getenv('KBUCKET_CACHE_DIR_ALT', None)
-            if val:
-                return val.split(':')
-            else:
-                return []
-
     def setDirectory(self, directory: str) -> None:
         self._directory = directory
 
-    def setAlternateDirectories(self, directories: List[str]) -> None:
-        self._alternate_directories = directories
-
     def findFile(self, hash: str) -> Optional[str]:
-        path, alternate_paths = self._get_path_ext(
-            hash=hash, create=False, return_alternates=True)
+        path = self._get_path_ext(
+            hash=hash, create=False)
         # if file is available return it
         if os.path.exists(path):
             return path
-        # return first alternate path that exists
-        for altpath in alternate_paths:
-            if os.path.exists(altpath):
-                return altpath
         hints_fname = path + '.hints.json'
         # if path.hints.json exists then read it
         if os.path.exists(hints_fname):
@@ -88,7 +76,7 @@ class LocalHashCache:
                     'Warning: failed to load hints json file, or invalid file. Removing: ' + hints_fname)
                 _safe_remove_file(hints_fname)
         return None
-    
+
     def find_file_by_code(self, *, code: str) -> Optional[str]:
         path = self._get_path_by_code(code=code, create=False)
         if os.path.exists(path):
@@ -230,12 +218,12 @@ class LocalHashCache:
         self.computeFileHash(path, _known_hash=hash)
 
     def _get_path(self, hash: str, *, create: bool=True, directory: Optional[str]=None) -> str:
-        return str(self._get_path_ext(hash=hash, create=create, directory=directory, return_alternates=False))
+        return str(self._get_path_ext(hash=hash, create=create, directory=directory))
 
-    def _get_path_ext(self, hash: str, *, create: bool=True, directory: Optional[str]=None, return_alternates: bool=False) -> Union[str, Tuple[str, List[str]]]:
+    def _get_path_ext(self, hash: str, *, create: bool=True, directory: Optional[str]=None) -> str:
         if not directory:
             directory = self.directory()
-        path1 = os.path.join(hash[0], hash[1:3])
+        path1 = os.path.join(hash[0:2], hash[2:4], hash[4:6])
         path0 = os.path.join(str(directory), path1)
         if create:
             if not os.path.exists(path0):
@@ -244,15 +232,7 @@ class LocalHashCache:
                 except:
                     if not os.path.exists(path0):
                         raise Exception('Unable to make directory: ' + path0)
-        if not return_alternates:
-            return os.path.join(path0, hash)
-        else:
-            altpaths = []
-            alt_dirs = self.alternateDirectories()
-            for altdir in alt_dirs:
-                altpaths.append(os.path.join(altdir, path1, hash))
-            return os.path.join(path0, hash), altpaths
-    
+        return os.path.join(path0, hash)
     def _get_path_by_code(self, *, code: str, create: bool) -> str:
         directory = self.directory()
         path1 = os.path.join(code[0], code[1:3])

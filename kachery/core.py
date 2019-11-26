@@ -31,17 +31,7 @@ _global_config=dict(
     from_remote_only=False,
     to_remote_only=False,
     algorithm='sha1',
-    verbose=False,
-    logto=dict(
-        url=None,
-        channel=None,
-        password=None
-    ),
-    logfr=dict(
-        url=None,
-        channel=None,
-        password=None
-    )
+    verbose=False
 )
 
 _global_data: dict=dict(
@@ -59,9 +49,7 @@ def set_config(*,
         from_remote_only: Union[bool, None]=None,
         to_remote_only: Union[bool, None]=None,
         verbose: Union[bool, None]=None,
-        algorithm: Union[str, None]=None,
-        logto: Union[dict, str, None]=None,
-        logfr: Union[dict, str, None]=None
+        algorithm: Union[str, None]=None
 ) -> None:
     if to is not None:
         if type(to) == str:
@@ -81,16 +69,6 @@ def set_config(*,
         _global_config['verbose'] = verbose
     if algorithm is not None:
         _global_config['algorithm'] = algorithm
-    if logto is not None:
-        if type(logto) == str:
-            set_config(logto=_get_preset_config(logto))
-        else:
-            _global_config['logto'] = deepcopy(logto)
-    if logfr is not None:
-        if type(logfr) == str:
-            set_config(logfr=_get_preset_config(logfr))
-        else:
-            _global_config['logfr'] = deepcopy(logfr)
 
 def _get_preset_config(name):
     configs = _load_preset_configs()
@@ -710,60 +688,6 @@ def _parse_kachery_url(url: str) -> Tuple[str, str, str, str]:
     if algorithm is None:
         raise Exception('Unexpected protocol: {}'.format(protocol))
     return protocol, algorithm, hash0, additional_path
-
-def log_write(message: dict, **kwargs) -> None:
-    config = _load_config(**kwargs)
-    if config['logto'] is not None:
-        _log_write(logto=config['logto'], message=message)
-
-def log_find(query: dict, **kwargs) -> List[dict]:
-    config = _load_config(**kwargs)
-    if config['logfr'] is not None:
-        return _log_find(logfr=config['logfr'], query=query)
-    else:
-        return []
-
-def _log_write(*, logto: dict, message: dict) -> None:
-    url_log_write, data = _form_log_write_url(message=message, logto=logto)
-    write_log_resp: dict = _http_post_json(url_log_write, data=data)
-    if not write_log_resp['success']:
-        raise Exception('Problem writing log: ' + write_log_resp['error'])
-
-def _log_find(*, logfr: dict, query: dict) -> List[dict]:
-    url_log_find, data = _form_log_find_url(query=query, logfr=logfr)
-    query_log_resp: dict = _http_post_json(url_log_find, data=data)
-    if not query_log_resp['success']:
-        raise Exception('Problem querying log: ' + query_log_resp['error'])
-    return query_log_resp['records']
-
-def _form_log_write_url(*, message: dict, logto: dict) -> Tuple(str, dict):
-    data = dict(
-        message=message,
-        time=time.time() - 0
-    )
-    url = logto['url']
-    channel = logto['channel']
-    collection = logto['collection']
-    signature = _sha1_of_object(dict(
-        name='log/write',
-        data=data,
-        password=_get_password(logto['password'])
-    ))
-    return ('{}/log/write/{}?channel={}&signature={}'.format(url, collection, channel, signature), data)
-
-def _form_log_find_url(*, query: dict, logfr: dict) -> Tuple(str, dict):
-    data = dict(
-        query=query
-    )
-    url = logfr['url']
-    channel = logfr['channel']
-    collection = logfr['collection']
-    signature = _sha1_of_object(dict(
-        name='log/query',
-        data=data,
-        password=_get_password(logfr['password'])
-    ))
-    return ('{}/log/find/{}?channel={}&signature={}'.format(url, collection, channel, signature), data)
 
 def _sha1_of_string(txt: str) -> str:
     hh = hashlib.sha1(txt.encode('utf-8'))
