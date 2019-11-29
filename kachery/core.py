@@ -43,6 +43,28 @@ _hash_caches = dict(
     md5=LocalHashCache(algorithm='md5')
 )
 
+class config:
+    def __init__(self, *,
+        to: Union[dict, str, None]=None,
+        fr: Union[dict, str, None]=None,
+        from_remote_only: Union[bool, None]=None,
+        to_remote_only: Union[bool, None]=None,
+        verbose: Union[bool, None]=None,
+        algorithm: Union[str, None]=None
+    ):
+        self._config = dict(
+            to=to, fr=fr,
+            from_remote_only=from_remote_only,
+            to_remote_only=to_remote_only,
+            verbose=verbose, algorithm=algorithm
+        )
+        self._old_config = None
+    def __enter__(self):
+        self._old_config = deepcopy(get_config())
+        set_config(**self._config)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        set_config(**self._old_config)
+
 def set_config(*,
         to: Union[dict, str, None]=None,
         fr: Union[dict, str, None]=None,
