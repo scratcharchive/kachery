@@ -75,6 +75,14 @@ class LocalHashCache:
                 print(
                     'Warning: failed to load hints json file, or invalid file. Removing: ' + hints_fname)
                 _safe_remove_file(hints_fname)
+        kachery_bootstrap_mountaintools_dir = os.getenv('KACHERY_BOOTSTRAP_MOUNTAINTOOLS_DIR', None)
+        if kachery_bootstrap_mountaintools_dir and self._algorithm == 'sha1':
+            path_mt = os.path.join(kachery_bootstrap_mountaintools_dir, hash[0], hash[1:3], hash)
+            if os.path.exists(path_mt):
+                path_dest = self._get_path_ext(hash=hash, create=True)
+                print('Copying file from mountaintools cache {} -> {}'.format(path_mt, path_dest))
+                shutil.copyfile(path_mt, path_dest)
+                return path_dest
         return None
 
     def find_file_by_code(self, *, code: str) -> Optional[str]:
