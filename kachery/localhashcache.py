@@ -81,7 +81,9 @@ class LocalHashCache:
             if os.path.exists(path_mt):
                 path_dest = self._get_path_ext(hash=hash, create=True)
                 print('Copying file from mountaintools cache {} -> {}'.format(path_mt, path_dest))
-                shutil.copyfile(path_mt, path_dest)
+                path_dest_tmp = path_dest + 'tmp_bootstrap_' + _random_string(8)
+                shutil.copyfile(path_mt, path_dest_tmp)
+                os.rename(path_dest_tmp, path_dest)
                 return path_dest
         return None
 
