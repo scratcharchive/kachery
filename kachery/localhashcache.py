@@ -170,6 +170,10 @@ class LocalHashCache:
 
     # @mtlogging.log()
     def computeFileHash(self, path: str, _known_hash: str = None, _cache_only: bool = False) -> Optional[str]:
+        if os.path.getsize(path) < 100000:
+            # if it is a small file, we can compute the hash directory
+            # this is important when the KACHERY_STORAGE_DIR is not a remote file system
+            return _compute_file_hash(path, algorithm=self._algorithm)
         path = os.path.abspath(path)
         basename = os.path.basename(path)
         if len(basename) == _length_of_hash_for_algorithm(self._algorithm):
