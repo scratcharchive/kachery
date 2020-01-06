@@ -495,7 +495,8 @@ def store_dir(dirpath: str, label: Union[str, None]=None, git_annex_mode: bool=F
     config = _load_config(**kwargs)
     if label is None:
         label = os.path.basename(dirpath)
-    X = _read_file_system_dir(dirpath, recursive=True, include_hashes=True, store_files=True, git_annex_mode=git_annex_mode, config=config)
+    # X = _read_file_system_dir(dirpath, recursive=True, include_hashes=True, store_files=True, git_annex_mode=git_annex_mode, config=config)
+    X = read_dir(dirpath, recursive=True, git_annex_mode=git_annex_mode, store_file=True, config=config)
     if not X:
         return None
     path1 = store_object(X, config=config)
@@ -503,7 +504,7 @@ def store_dir(dirpath: str, label: Union[str, None]=None, git_annex_mode: bool=F
     hash0, algorithm = _determine_file_hash_from_url(url=path1, config=config)
     return '{}dir://{}.{}'.format(algorithm, hash0, label)
 
-def read_dir(path: str, *, recursive: bool=True, git_annex_mode: bool=False, **kwargs):
+def read_dir(path: str, *, recursive: bool=True, git_annex_mode: bool=False, store_files: bool=False, **kwargs):
     config = _load_config(**kwargs)
     if _is_hash_url(path):
         protocol, algorithm, hash0, additional_path = _parse_kachery_url(path)
@@ -533,7 +534,7 @@ def read_dir(path: str, *, recursive: bool=True, git_annex_mode: bool=False, **k
                     dd['dirs'][dname] = {}
         return dd
     else:
-        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=False, git_annex_mode=git_annex_mode, config=config)
+        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=store_file, git_annex_mode=git_annex_mode, config=config)
 
 def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Union[str, None]:
     return _hash_caches[algorithm].computeFileHash(path)
