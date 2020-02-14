@@ -20,6 +20,7 @@ _global = dict(
 class LocalHashCache:
     def __init__(self, *, algorithm):
         self._directory = None
+        self._directory_alt = None
         self._algorithm = algorithm
 
     def directory(self) -> str:
@@ -39,6 +40,15 @@ class LocalHashCache:
                 else:
                     raise Exception('Unexpected algorithm: {}'.format(self._algorithm))
 
+    def directory_alt(self) -> Union[None, str]:
+        if self._directory_alt:
+            return self._directory_alt
+        else:
+            if 'KACHERY_STORAGE_DIR_ALT' in os.environ:
+                return os.path.join(str(os.getenv('KACHERY_STORAGE_DIR_ALT')), '{}'.format(self._algorithm))
+            else:
+                return None
+
     def setDirectory(self, directory: str) -> None:
         self._directory = directory
 
@@ -48,6 +58,15 @@ class LocalHashCache:
         # if file is available return it
         if os.path.exists(path):
             return path
+
+        # check alternate location
+        path_alt = self._get_path_alt_ext(
+            hash=hash
+        )
+        # if file is available return it
+        if os.path.exists(path_alt):
+            return path_alt
+
         hints_fname = path + '.hints.json'
         # if path.hints.json exists then read it
         if os.path.exists(hints_fname):
@@ -246,6 +265,12 @@ class LocalHashCache:
                 except:
                     if not os.path.exists(path0):
                         raise Exception('Unable to make directory: ' + path0)
+        return os.path.join(path0, hash)
+    def _get_path_alt_ext(self, hash: str, *, directory: Optional[str]=None) -> str:
+        if not directory:
+            directory = self.directory_alt()
+        path1 = os.path.join(hash[0:2], hash[2:4], hash[4:6])
+        path0 = os.path.join(str(directory), path1)
         return os.path.join(path0, hash)
     def _get_path_by_code(self, *, code: str, create: bool) -> str:
         directory = self.directory()
