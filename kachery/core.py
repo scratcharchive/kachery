@@ -159,6 +159,8 @@ def _load_config(**kwargs) -> dict:
     for key, val in kwargs.items():
         if key in ['to', 'fr'] and type(val) == str:
             ret[key] = _get_preset_config(val)
+        if key in ['to', 'fr'] and val == None:
+            ret[key] = dict(url=None, channel=None, password=None)
         else:
             ret[key] = val
     return ret
