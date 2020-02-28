@@ -574,7 +574,7 @@ def _check_remote_file(hash_url: str, *, config: dict) -> Tuple[Union[str, None]
             return None, algorithm, hash0, 0
             
         url_check: str = _form_check_url(hash=hash0, algorithm=algorithm, config=config)
-        check_resp: dict = _http_get_json(url_check, use_cache_on_success=True)
+        check_resp: dict = _http_get_json(url_check, use_cache_on_found=True)
         if not check_resp['success']:
             print('Warning: Problem checking for file: ' + check_resp['error'])
             return None, None, None, None
@@ -731,8 +731,8 @@ def _sha1_of_object(obj: object) -> str:
     return _sha1_of_string(txt)
 
 _http_get_cache = dict()
-def _http_get_json(url: str, use_cache_on_success: bool=False, verbose: Optional[bool]=False, retry_delays: Optional[List[float]]=None) -> dict:
-    if use_cache_on_success:
+def _http_get_json(url: str, use_cache_on_found: bool=False, verbose: Optional[bool]=False, retry_delays: Optional[List[float]]=None) -> dict:
+    if use_cache_on_found:
         if url in _http_get_cache:
             return _http_get_cache[url]
     timer = time.time()
@@ -758,8 +758,8 @@ def _http_get_json(url: str, use_cache_on_success: bool=False, verbose: Optional
         return dict(success=False, error='Unable to load json from url: ' + url)
     if verbose:
         print('Elapsed time for _http_get_json: {} {}'.format(time.time() - timer, url))
-    if use_cache_on_success:
-        if ret['success']:
+    elif use_cache_on_found:
+        if ret['success'] and ret['found']:
             _http_get_cache[url] = ret
     return ret
 
