@@ -763,6 +763,9 @@ def _http_get_json(url: str, use_cache_on_success: bool=False, verbose: Optional
             _http_get_cache[url] = ret
     return ret
 
+def reset():
+    _http_get_cache = dict()
+
 # thanks: https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
 def _format_file_size(size: Optional[int]) -> str:
     if not size:
