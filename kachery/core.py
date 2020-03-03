@@ -730,11 +730,11 @@ def _sha1_of_object(obj: object) -> str:
     txt = json.dumps(obj, sort_keys=True, separators=(',', ':'))
     return _sha1_of_string(txt)
 
-_http_get_cache = dict()
 def _http_get_json(url: str, use_cache_on_found: bool=False, verbose: Optional[bool]=False, retry_delays: Optional[List[float]]=None) -> dict:
     if use_cache_on_found:
-        if url in _http_get_cache:
-            return _http_get_cache[url]
+        cache = getattr(_http_get_json, 'cache')
+        if url in cache:
+            return cache[url]
     timer = time.time()
     if retry_delays is None:
         retry_delays = [0.2, 0.5]
@@ -760,11 +760,14 @@ def _http_get_json(url: str, use_cache_on_found: bool=False, verbose: Optional[b
         print('Elapsed time for _http_get_json: {} {}'.format(time.time() - timer, url))
     elif use_cache_on_found:
         if ret['success'] and ret['found']:
-            _http_get_cache[url] = ret
+            cache = getattr(_http_get_json, 'cache')
+            cache[url] = ret
     return ret
 
 def reset():
-    _http_get_cache = dict()
+    setattr(_http_get_json, 'cache', dict())
+
+reset()
 
 # thanks: https://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
 def _format_file_size(size: Optional[int]) -> str:
