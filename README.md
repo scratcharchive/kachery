@@ -35,7 +35,60 @@ Or a development installation (after cloning this repo and stepping into the dir
 pip install -e .
 ```
 
+You must then create a directory on your computer where cached and temporary
+data files will be stored, and then set the KACHERY_STORAGE_DIR environment
+variable to point to that directory. For example:
+
+```bash
+# Create a directory to store cached and temporary files
+mkdir $HOME/.kachery-storage
+
+# Add this to the bottom of your ~/.bashrc file and then open a new terminal
+export KACHERY_STORAGE_DIR=$HOME/.kachery-storage
+```
+
 See the documentation below for hosting your own kachery server.
+
+## A quick example
+
+First we store some random data file in the local kachery database via the
+command-line:
+
+```bash
+> kachery-store /path/to/some/dataset.csv
+sha1:////3476867b4d9300e4a44e2b910af87b08f8e608bf/dataset.csv
+```
+
+Note that this storage operation could also be performed within Python as
+documented below.
+
+The returned sha1:// path is now a universal pointer to the file which may be
+used in a Python script as follows
+
+```python
+#!/usr/bin/env python
+
+import kachery as ka
+
+path = 'sha1:////3476867b4d9300e4a44e2b910af87b08f8e608bf/dataset.csv'
+
+# Get the path to the cached file
+path_local = ka.load_file(path)
+
+# Or load the text of the file directly
+dataset_csv_text = ka.load_text(path)
+
+# There are also commands to load a dict from a .json file or an array from a .npy file
+# See ka.load_object and ka.load_npy below
+```
+
+The advantage is that the above Python script is universal and reproducible in
+that it does not depend on the actual location of the file on disk, and it is
+(for all practical purposes) guaranteed to always point to the same file content
+with the given SHA-1 hash.
+
+Note that the `/dataset.csv` extension on the sha1:// path is for information
+purposes only and does not affect the file retrieval in any way.
 
 ## Command line
 
