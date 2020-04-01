@@ -10,6 +10,11 @@
             "channel": "neuro",
             "password": {"env": "KACHERY_DEFAULT_PASSWORD"}
         },
+        "labbox_ephys_readonly": {
+            "url": "http://52.9.11.30:8080",
+            "channel": "labbox_ephys_readwrite",
+            "password": {"env": "LABBOX_EPHYS_KACHERY_READWRITE_PASSWORD"}
+        },
         "labbox_ephys_readwrite": {
             "url": "http://52.9.11.30:8080",
             "channel": "labbox_ephys_readwrite",
