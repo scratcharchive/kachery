@@ -7,7 +7,6 @@ import hashlib
 import tempfile
 import time
 import stat
-import requests
 import urllib.request as request
 import shutil
 import io
@@ -112,8 +111,8 @@ def _load_preset_configs():
     if _global_data['preset_config'] is None:
         config_path = os.path.join(_config_dir(), 'preset_configuration.json')
         try_download = True
+        obj = None
         if os.path.exists(config_path):
-            obj = None
             try:
                 obj0 = _read_json_file(config_path)
                 if obj0 and obj0.get('configurations'):
@@ -146,6 +145,12 @@ def _file_age_sec(pathname):
 
 def _config_dir():
     homedir = os.path.expanduser("~")
+    if not os.path.exists(homedir):
+        # this is not the best way to handle it
+        # but i'm trying to solve a tricky case where
+        # the resolved home directory does not exist inside
+        # a container :(
+        homedir = '/tmp'
     ret = os.path.join(homedir, '.kachery')
     if not os.path.exists(ret):
         os.mkdir(ret)
@@ -536,7 +541,7 @@ def read_dir(path: str, *, recursive: bool=True, git_annex_mode: bool=False, sto
                     dd['dirs'][dname] = {}
         return dd
     else:
-        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=store_file, git_annex_mode=git_annex_mode, config=config)
+        return _read_file_system_dir(path, recursive=recursive, include_hashes=True, store_files=store_files, git_annex_mode=git_annex_mode, config=config)
 
 def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Union[str, None]:
     return _hash_caches[algorithm].computeFileHash(path)
@@ -793,6 +798,10 @@ def _http_post_file_data(url: str, fname: str, verbose: Optional[bool]=None) -> 
         print('_http_post_file_data::: ' + fname)
     with open(fname, 'rb') as f:
         try:
+            import requests
+        except:
+            raise Exception('Error importing requests')
+        try:
             req = requests.post(url, data=f)
         except:
             raise Exception('Error posting file data.')
@@ -811,6 +820,10 @@ def _http_post_json(url: str, data: dict, verbose: Optional[bool]=None) -> dict:
         verbose = (os.environ.get('HTTP_VERBOSE', '') == 'TRUE')
     if verbose:
         print('_http_post_json::: ' + url)
+    try:
+        import requests
+    except:
+        raise Exception('Error importing requests *')
     req = requests.post(url, json=data)
     if req.status_code != 200:
         return dict(
@@ -909,6 +922,10 @@ def _load_bytes_from_remote_file(*, url: str, config: dict, size: int, start: Un
     timer = time.time()
     if (end - start > 10000) and (not write_to_stdout):
         print('Downloading {} of {} (bytes {}-{})'.format(_format_file_size(end - start), url, start, end))
+    try:
+        import requests
+    except:
+        raise Exception('Error importing requests **')
     response = requests.get(url, headers=headers, stream=True)
     for chunk in response.iter_content(chunk_size=5120):
         if chunk:  # filter out keep-alive new chunks
