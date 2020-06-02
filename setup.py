@@ -4,7 +4,7 @@ pkg_name = "kachery"
 
 setuptools.setup(
     name=pkg_name,
-    version="0.5.0",
+    version="0.5.1",
     author="Jeremy Magland",
     author_email="jmagland@flatironinstitute.org",
     description="Content-addressable storage database",

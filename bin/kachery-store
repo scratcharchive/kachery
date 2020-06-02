@@ -16,11 +16,14 @@ def main():
     parser.add_argument('--git-annex-mode', help='Act smart with git-annex repos', required=False, action='store_true')
 
     ka._add_upload_args(parser)
+    parser.add_argument('--use-hard-links', action='store_true', help='Whether to use hard links when storing files in the kachery storage directory')
 
     args = parser.parse_args()
     path = args.path
 
     ka._set_upload_config_from_parsed_args(args)
+    if args.use_hard_links:
+        ka.set_config(use_hard_links=True)
 
     ka.set_config(
         algorithm=args.algorithm

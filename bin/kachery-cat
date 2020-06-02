@@ -14,12 +14,16 @@ def main():
     parser.add_argument('path', help='Hash path to the file (e.g. sha1://906faceaf874dd64e81de0048f36f4bab0f1f171)')
     parser.add_argument('--start', help='The start byte', required=False, default=None)
     parser.add_argument('--end', help='The end byte (+1)', required=False, default=None)
+    parser.add_argument
     ka._add_download_args(parser)
+    parser.add_argument('--use-hard-links', action='store_true', help='Whether to use hard links when storing files in the kachery storage directory')
 
     args = parser.parse_args()
     path = args.path
 
     ka._set_download_config_from_parsed_args(args)
+    if args.use_hard_links:
+        ka.set_config(use_hard_links=True)
     
     if args.start is None and args.end is None:
         path1 = ka.load_file(path)

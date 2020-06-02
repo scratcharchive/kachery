@@ -14,11 +14,14 @@ def main():
     parser = argparse.ArgumentParser(description='Prints info about a file to stdout.')
     parser.add_argument('path', help='Hash path to the file (e.g. sha1://906faceaf874dd64e81de0048f36f4bab0f1f171)')
     ka._add_download_args(parser)
+    parser.add_argument('--use-hard-links', action='store_true', help='Whether to use hard links when storing files in the kachery storage directory')
 
     args = parser.parse_args()
     path = args.path
 
     ka._set_download_config_from_parsed_args(args)
+    if args.use_hard_links:
+        ka.set_config(use_hard_links=True)
 
     info0 = ka.get_file_info(path)
     if not info0:

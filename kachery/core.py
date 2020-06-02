@@ -30,7 +30,8 @@ _global_config=dict(
     from_remote_only=False,
     to_remote_only=False,
     algorithm='sha1',
-    verbose=False
+    verbose=False,
+    use_hard_links=False
 )
 
 _global_data: dict=dict(
@@ -49,13 +50,16 @@ class config:
         from_remote_only: Union[bool, None]=None,
         to_remote_only: Union[bool, None]=None,
         verbose: Union[bool, None]=None,
-        algorithm: Union[str, None]=None
+        algorithm: Union[str, None]=None,
+        use_hard_links: Union[bool, None]=None
     ):
         self._config = dict(
             to=to, fr=fr,
             from_remote_only=from_remote_only,
             to_remote_only=to_remote_only,
-            verbose=verbose, algorithm=algorithm
+            verbose=verbose,
+            algorithm=algorithm,
+            use_hard_links=use_hard_links
         )
         self._old_config = None
     def __enter__(self):
@@ -70,7 +74,8 @@ def set_config(*,
         from_remote_only: Union[bool, None]=None,
         to_remote_only: Union[bool, None]=None,
         verbose: Union[bool, None]=None,
-        algorithm: Union[str, None]=None
+        algorithm: Union[str, None]=None,
+        use_hard_links: Union[bool, None]=None
 ) -> None:
     if to is not None:
         if type(to) == str:
@@ -90,6 +95,8 @@ def set_config(*,
         _global_config['verbose'] = verbose
     if algorithm is not None:
         _global_config['algorithm'] = algorithm
+    if use_hard_links is not None:
+        _global_config['use_hard_links'] = use_hard_links
 
 def _get_preset_config(name):
     configs = _load_preset_configs()
@@ -302,7 +309,7 @@ def _load_remote_file_block(path: str, *, url: str, size: int, config: dict, sta
     if hash0 is None:
         raise Exception('Unable to compute hash of file: {}'.format(path))
     assert algorithm0 is not None
-    code: Dict[str, int]=dict(
+    code: Dict[str, Union[str, int]]=dict(
         start=start,
         end=end
     )
@@ -385,7 +392,7 @@ class _RemoteFile:
                 buffers.append(self._read(bb * self._block_size, (bb + 1) * self._block_size))
             buffers.append(self._read(b_end * self._block_size, p2))
             return b''.join(buffers)
-    def _get_block_path(self, block_num):
+    def _get_block_path(self, block_num) -> Union[str, None]:
         if block_num == 0 and self._block_size >= self._size:
             # in this case we are loading the entire file
             # we need to put load_from='remote' in case the config has remote_only (a bit tricky)
@@ -397,6 +404,7 @@ class _RemoteFile:
         if self._current_block_num == block_num:
             return
         block_path = self._get_block_path(block_num)
+        assert block_path is not None
         if self._current_block_file is not None:
             self._current_block_file.close()
         self._current_block_file = open(block_path, 'rb')
@@ -447,7 +455,7 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
         return None
     else:
         if os.path.isfile(path):
-            ret = dict(
+            ret: Dict[str, Union[str, int, None]] = dict(
                 path=path,
                 size=os.path.getsize(path)
             )
@@ -547,7 +555,7 @@ def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Unio
     return _hash_caches[algorithm].computeFileHash(path)
 
 def _store_local_file_in_cache(path: str, *, hash: str, algorithm: str, config: dict) -> None:
-    _, hash2 = _hash_caches[algorithm].copyFileToCache(path)
+    _, hash2 = _hash_caches[algorithm].copyFileToCache(path, use_hard_links=config['use_hard_links'])
     if hash2 is None:
         raise Exception('Unable to store local file in cache: {}'.format(path))
 

@@ -20,7 +20,6 @@ _global = dict(
 class LocalHashCache:
     def __init__(self, *, algorithm):
         self._directory = None
-        self._directory_alt = None
         self._algorithm = algorithm
 
     def directory(self) -> str:
@@ -41,13 +40,10 @@ class LocalHashCache:
                     raise Exception('Unexpected algorithm: {}'.format(self._algorithm))
 
     def directory_alt(self) -> Union[None, str]:
-        if self._directory_alt:
-            return self._directory_alt
+        if 'KACHERY_STORAGE_DIR_ALT' in os.environ:
+            return os.path.join(str(os.getenv('KACHERY_STORAGE_DIR_ALT')), '{}'.format(self._algorithm))
         else:
-            if 'KACHERY_STORAGE_DIR_ALT' in os.environ:
-                return os.path.join(str(os.getenv('KACHERY_STORAGE_DIR_ALT')), '{}'.format(self._algorithm))
-            else:
-                return None
+            return None
 
     def setDirectory(self, directory: str) -> None:
         self._directory = directory
@@ -177,13 +173,16 @@ class LocalHashCache:
         return path0
 
     # @mtlogging.log()
-    def copyFileToCache(self, path: str) -> Tuple[str, str]:
+    def copyFileToCache(self, path: str, use_hard_links=False) -> Tuple[str, str]:
         hash0 = self.computeFileHash(path)
         assert hash0 is not None
         path0 = self._get_path(hash0, create=True)
         if not os.path.exists(path0):
             tmp_path = path0 + '.copying.' + _random_string(6)
-            copyfile(path, tmp_path)
+            if use_hard_links:
+                os.link(path, tmp_path)
+            else:
+                copyfile(path, tmp_path)
             _rename_file(tmp_path, path0, remove_if_exists=False)
         return path0, hash0
 
@@ -212,7 +211,7 @@ class LocalHashCache:
                     bb = obj['stat']
                     if _stat_objects_match(aa, bb):
                         if obj.get(self._algorithm, None):
-                            return obj[self._algorithm]
+                            return str(obj[self._algorithm])
 
         if _known_hash is None:
             if _cache_only:
@@ -224,7 +223,7 @@ class LocalHashCache:
         if not hash1:
             return None
 
-        obj = dict(
+        obj: Dict[str, Union[str, dict, None]] = dict(
             stat=aa
         )
         obj[self._algorithm] = hash1
