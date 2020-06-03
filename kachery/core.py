@@ -4,7 +4,6 @@ from typing import Union, Tuple, Optional, List, Dict
 import simplejson
 import json
 import hashlib
-import tempfile
 import time
 import stat
 import urllib.request as request
@@ -15,6 +14,7 @@ import math
 from copy import deepcopy
 from .filelock import FileLock
 from .localhashcache import LocalHashCache
+from ._temporarydirectory import TemporaryDirectory
 
 _global_config=dict(
     to=dict(
@@ -488,10 +488,11 @@ def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=
 def store_text(text: str, basename: Union[str, None]=None, **kwargs) -> Union[str, None]:
     if basename is None:
         basename = 'file.txt'
-    with tempfile.NamedTemporaryFile() as tmpfile:
-        with open(tmpfile.name, 'w') as f:
+    with TemporaryDirectory() as tmpdir:
+        fname = tmpdir + '/text.txt'
+        with open(fname, 'w') as f:
             f.write(text)
-        return store_file(tmpfile.name, basename=basename, **kwargs)
+        return store_file(fname, basename=basename, **kwargs)
 
 def store_object(object: dict, basename: Union[str, None]=None, indent: Union[int, None]=None, **kwargs) -> Union[str, None]:
     if basename is None:
@@ -502,9 +503,10 @@ def store_object(object: dict, basename: Union[str, None]=None, indent: Union[in
 def store_npy(array: np.ndarray, basename: Union[str, None]=None, **kwargs) -> Union[str, None]:
     if basename is None:
         basename = 'file.npy'
-    with tempfile.NamedTemporaryFile(suffix='.npy') as tmpfile:
-        np.save(tmpfile.name, array)
-        return store_file(tmpfile.name, basename=basename, **kwargs)
+    with TemporaryDirectory() as tmpdir:
+        fname = tmpdir + '/array.npy'
+        np.save(fname, array)
+        return store_file(fname, basename=basename, **kwargs)
 
 def store_dir(dirpath: str, label: Union[str, None]=None, git_annex_mode: bool=False, **kwargs):
     config = _load_config(**kwargs)
