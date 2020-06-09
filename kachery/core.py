@@ -100,8 +100,8 @@ def set_config(*,
         _global_config['use_hard_links'] = use_hard_links
 
 def _get_server_config_for_name(name: str, *, write: bool) -> dict:
-    if '.' in name:
-        a = name.split('.')
+    if '~' in name:
+        a = name.split('~')
         assert len(a) == 2, f'Invalid name: {name}'
         server_name = a[0]
         channel_name = a[1]

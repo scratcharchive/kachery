@@ -9,12 +9,12 @@ def _file_age_sec(pathname):
     return time.time() - os.stat(pathname)[stat.ST_MTIME]
 
 def _clone_git_repo_branch(*, url, dest_path, branch):
-    process = subprocess.Popen(f"git clone {url} --branch {branch} --single-branch {dest_path}", shell=True, stdout=subprocess.PIPE)
+    process = subprocess.Popen(f"git clone {url} --branch {branch} --single-branch {dest_path}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     process.wait()
     assert process.returncode == 0, 'Error cloning git repo'
 
 def _pull_git_repo(*, path):
-    process = subprocess.Popen(f"git pull", shell=True, cwd=path, stdout=subprocess.PIPE)
+    process = subprocess.Popen(f"git pull", shell=True, cwd=path, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     process.wait()
     assert process.returncode == 0, 'Error pulling git repo'
 
