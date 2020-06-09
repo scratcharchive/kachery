@@ -4,8 +4,8 @@ from typing import Union, Tuple, Optional, List, Dict
 import simplejson
 import json
 import hashlib
+import tempfile
 import time
-import stat
 import urllib.request as request
 import shutil
 import io
@@ -15,6 +15,7 @@ from copy import deepcopy
 from .filelock import FileLock
 from .localhashcache import LocalHashCache
 from ._temporarydirectory import TemporaryDirectory
+from ._update_config_repos import _update_config_repos
 
 _global_config=dict(
     to=dict(
@@ -35,7 +36,7 @@ _global_config=dict(
 )
 
 _global_data: dict=dict(
-    preset_config=None
+    server_configs=None
 )
 
 _hash_caches = dict(
@@ -78,13 +79,13 @@ def set_config(*,
         use_hard_links: Union[bool, None]=None
 ) -> None:
     if to is not None:
-        if type(to) == str:
-            set_config(to=_get_preset_config(to))
+        if isinstance(to, str):
+            set_config(to=_get_server_config_for_name(to, write=True))
         else:
             _global_config['to'] = deepcopy(to)
     if fr is not None:
-        if type(fr) == str:
-            set_config(fr=_get_preset_config(fr))
+        if isinstance(fr, str):
+            set_config(fr=_get_server_config_for_name(fr, write=False))
         else:
             _global_config['fr'] = deepcopy(fr)
     if from_remote_only is not None:
@@ -98,57 +99,50 @@ def set_config(*,
     if use_hard_links is not None:
         _global_config['use_hard_links'] = use_hard_links
 
-def _get_preset_config(name):
-    configs = _load_preset_configs()
-    configurations = configs['configurations']
-    configurations['local'] = dict(
-        url=None,
-        channel=None,
-        password=None
-    )
-    if name in configurations:
-        return deepcopy(configurations[name])
+def _get_server_config_for_name(name: str, *, write: bool) -> dict:
+    if '.' in name:
+        a = name.split('.')
+        assert len(a) == 2, f'Invalid name: {name}'
+        server_name = a[0]
+        channel_name = a[1]
     else:
-        raise Exception('Configuration not found: {}'.format(name))
+        server_name = name
+        channel_name = None
+    server_configs = _load_server_configs()
+    try:
+        server_config = [c for c in server_configs if c['name'] == server_name][0]
+    except:
+        raise Exception(f'Unable to find server: {server_name}')
+    if channel_name is None:
+        if not write:
+            channel_name = server_config['default_read_channel']
+        else:
+            channel_name = server_config['default_write_channel']
+    try:
+        channel_config = [c for c in server_config['channels'] if c['name'] == channel_name][0]
+    except:
+        raise Exception(f'Unable to find channel {channel_name} in server {server_name}')
+    password = channel_config.get('password', None)
+    if password is None:
+        server_passwords_fname = _config_dir() + '/server_passwords.json'
+        try:
+            with open(server_passwords_fname, 'r') as f:
+                server_passwords = json.load(f)
+        except:
+            server_passwords = []
+        for r in server_passwords:
+            if r['server_name'] == server_name and r['channel_name'] == channel_name:
+                password = r['password']
+    if password is None:
+        raise Exception(f'No password found for server.channel: {server_name}.{channel_name}')
+    return dict(
+        url=server_config['url'],
+        channel=channel_name,
+        password=password
+    )
 
 def get_config() -> dict:
     return _load_config()
-
-def _load_preset_configs():
-    if _global_data['preset_config'] is None:
-        config_path = os.path.join(_config_dir(), 'preset_configuration.json')
-        try_download = True
-        obj = None
-        if os.path.exists(config_path):
-            try:
-                obj0 = _read_json_file(config_path)
-                if obj0 and obj0.get('configurations'):
-                    obj = obj0
-            except:
-                pass
-            if obj is not None and _file_age_sec(config_path) <= 60:
-                try_download = False
-        if try_download:
-            url = 'https://raw.githubusercontent.com/flatironinstitute/kachery/config/config/config_2019a.json'
-            try:
-                obj0 = _http_get_json(url)
-                if obj0 and obj0.get('configurations', None):
-                    obj = obj0
-                    _write_json_file(obj, config_path)
-                else:
-                    print(obj0.get('error', ''))
-                    print('Warning: Problem loading preset configurations from: {}'.format(url))
-            except:
-                print('Warning: unable to load preset configurations from: {}'.format(url))
-        if obj is None:
-            raise Exception('Unable to load preset configurations')
-        _global_data['preset_config'] = obj
-    ret = _global_data['preset_config']
-    assert ret is not None
-    return dict(ret)
-
-def _file_age_sec(pathname):
-    return time.time() - os.stat(pathname)[stat.ST_MTIME]
 
 def _config_dir():
     homedir = os.path.expanduser("~")
@@ -157,11 +151,25 @@ def _config_dir():
         # but i'm trying to solve a tricky case where
         # the resolved home directory does not exist inside
         # a container :(
-        homedir = '/tmp'
+        if 'KACHERY_STORAGE_DIR' in os.environ:
+            homedir = os.environ['KACHERY_STORAGE_DIR']
+        else:
+            # last resort
+            homedir = tempfile.gettempdir()
     ret = os.path.join(homedir, '.kachery')
     if not os.path.exists(ret):
         os.mkdir(ret)
     return ret
+
+def _load_server_configs():
+    if _global_data['server_configs'] is not None:
+        return _global_data['server_configs']
+    else:
+        config_repos_path = os.path.join(_config_dir(), 'config_repos')
+        x = _update_config_repos(config_repos_path)
+        server_configs = x['servers']
+        _global_data['server_configs'] = server_configs
+    return _global_data['server_configs']
 
 def _load_config(**kwargs) -> dict:
     if 'config' in kwargs:
@@ -169,8 +177,10 @@ def _load_config(**kwargs) -> dict:
     else:
         ret = deepcopy(_global_config)
     for key, val in kwargs.items():
-        if key in ['to', 'fr'] and type(val) == str:
-            ret[key] = _get_preset_config(val)
+        if key == 'to':
+            ret[key] = _get_server_config_for_name(val, write=True)
+        elif key == 'fr':
+            ret[key] = _get_server_config_for_name(val, write=False)
         elif key in ['to', 'fr'] and val == None:
             ret[key] = dict(url=None, channel=None, password=None)
         else:

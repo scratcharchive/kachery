@@ -5,3 +5,4 @@ from .core import read_dir
 from .core import reset
 
 from .parser_helpers import _add_download_args, _add_upload_args, _set_download_config_from_parsed_args, _set_upload_config_from_parsed_args
+from .core import _config_dir

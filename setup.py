@@ -4,7 +4,7 @@ pkg_name = "kachery"
 
 setuptools.setup(
     name=pkg_name,
-    version="0.5.2",
+    version="0.6.0",
     author="Jeremy Magland",
     author_email="jmagland@flatironinstitute.org",
     description="Content-addressable storage database",
@@ -15,7 +15,8 @@ setuptools.setup(
         'bin/kachery-ls',
         'bin/kachery-cat',
         'bin/kachery-info',
-	'bin/kachery-load-dir'
+	    'bin/kachery-load-dir',
+        'bin/kachery-set-password'
     ],
     install_requires=[
         'requests', 'simplejson'
