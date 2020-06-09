@@ -76,7 +76,10 @@ def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, fol
                 folder=sibling['folder']
             )
             for server0 in x['servers']:
-                servers.append(server0)
+                if server0['name'] not in [s['name'] for s in servers]:
+                    servers.append(server0)
+                else:
+                    print(f'WARNING: duplicate server name in config: {server0["name"]}')
     config0 = dict(
         url=repo_url,
         branch=branch,
