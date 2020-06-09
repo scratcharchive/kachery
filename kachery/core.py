@@ -177,12 +177,18 @@ def _load_config(**kwargs) -> dict:
     else:
         ret = deepcopy(_global_config)
     for key, val in kwargs.items():
-        if key == 'to':
-            ret[key] = _get_server_config_for_name(val, write=True)
-        elif key == 'fr':
-            ret[key] = _get_server_config_for_name(val, write=False)
-        elif key in ['to', 'fr'] and val == None:
+        if key in ['to', 'fr'] and val == None:
             ret[key] = dict(url=None, channel=None, password=None)
+        elif key == 'to':
+            if isinstance(val, str):
+                ret[key] = _get_server_config_for_name(val, write=True)
+            else:
+                ret[key] = val
+        elif key == 'fr':
+            if isinstance(val, str):
+                ret[key] = _get_server_config_for_name(val, write=False)
+            else:
+                ret[key] = val
         else:
             ret[key] = val
     return ret
