@@ -4,6 +4,7 @@ import time
 import stat
 import shutil
 import subprocess
+from .filelock import FileLock
 
 def _file_age_sec(pathname):
     return time.time() - os.stat(pathname)[stat.ST_MTIME]
@@ -93,11 +94,16 @@ def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, fol
 
 def _update_config_repos(config_repos_path) -> dict:
     if not os.path.exists(config_repos_path):
-        os.mkdir(config_repos_path)
-    return _update_config_repo_branch(
-        config_repos_path=config_repos_path,
-        name='main',
-        repo_url='https://github.com/flatironinstitute/kachery',
-        branch='config',
-        folder='config_2020a'
-    )
+        try:
+            os.mkdir(config_repos_path)
+        except:
+            if not os.path.exists(config_repos_path):
+                raise Exception(f'Problem creating directory: {config_repos_path}')
+    with FileLock(config_repos_path + '/update.lock', exclusive=True):
+        return _update_config_repo_branch(
+            config_repos_path=config_repos_path,
+            name='main',
+            repo_url='https://github.com/flatironinstitute/kachery',
+            branch='config',
+            folder='config_2020a'
+        )
