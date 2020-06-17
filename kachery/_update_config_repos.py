@@ -22,32 +22,24 @@ def _pull_git_repo(*, path):
     assert process.returncode == 0, 'Error pulling git repo'
 
 def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, folder, recursive=True) -> dict:
-    print('--- update_config_repo_branch 1')
     config_repo_path = config_repos_path + '/' + name
     if not os.path.exists(config_repo_path):
         os.mkdir(config_repo_path)
     config_fname = config_repo_path + '/config.json'
     try:
-        print('--- update_config_repo_branch 2')
         with open(config_fname, 'r') as f:
             config0 = json.load(f)
     except:
         config0 = None
     if config0 is not None and config0['url'] == repo_url and config0['branch'] == branch and config0['folder'] == folder and os.path.exists(config_repo_path + '/repo'):
-        print('--- update_config_repo_branch 3')
         if _file_age_sec(config_fname) < 60:
-            print('--- update_config_repo_branch 3.1')
             return config0
         else:
             try:
-                print('--- update_config_repo_branch 3.2')
                 _pull_git_repo(path=config_repo_path + '/repo')
-                print('--- update_config_repo_branch 3.3')
             except:
-                print('--- update_config_repo_branch 3.4')
                 print(f'WARNING: unable to pull git repo: {config_repo_path}/repo')
     else:
-        print('--- update_config_repo_branch 4')
         shutil.rmtree(config_repo_path)
         os.mkdir(config_repo_path)
         try:
@@ -58,7 +50,6 @@ def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, fol
     siblings = []
     siblings_folder = os.path.join(config_repo_path, 'repo', folder, 'siblings')
     if os.path.exists(siblings_folder):
-        print('--- update_config_repo_branch 5')
         list0 = os.listdir(siblings_folder)
         for fname in list0:
             if fname.endswith('.json'):
@@ -73,7 +64,6 @@ def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, fol
     servers = []
     servers_folder = os.path.join(config_repo_path, 'repo', folder, 'servers')
     if os.path.exists(servers_folder):
-        print('--- update_config_repo_branch 6')
         list0 = os.listdir(servers_folder)
         for fname in list0:
             if fname.endswith('.json'):
@@ -81,7 +71,6 @@ def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, fol
                     server_config = json.load(f)
                 servers.append(server_config)
     if recursive:
-        print('--- update_config_repo_branch 7')
         for sibling in siblings:
             x = _update_config_repo_branch(
                 config_repos_path=config_repos_path,
@@ -95,7 +84,6 @@ def _update_config_repo_branch(*, config_repos_path, name, repo_url, branch, fol
                     servers.append(server0)
                 else:
                     print(f'WARNING: duplicate server name in config: {server0["name"]}')
-    print('--- update_config_repo_branch 8')
     config0 = dict(
         url=repo_url,
         branch=branch,
