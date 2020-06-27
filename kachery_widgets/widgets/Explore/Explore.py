@@ -5,7 +5,7 @@ class Explore:
         super().__init__()
 
     def javascript_state_changed(self, prev_state, state):
-        ka.set_config(fr='default_readonly', to='local')
+        ka.set_config(fr='default_readonly', to='')
 
         self._set_status('running', 'Running Explore')
 
@@ -30,7 +30,7 @@ class Explore:
         self._set_status('finished', 'Finished Explore ' + state['path'])
 
     def on_message(self, msg):
-        ka.set_config(fr='default_readonly', to='local')
+        ka.set_config(fr='default_readonly', to='')
         # process custom messages from JavaScript here
         # In .js file, use this.pythonInterface.sendMessage({...})
         if msg['name'] == 'loadText':

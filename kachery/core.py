@@ -177,7 +177,7 @@ def _load_config(**kwargs) -> dict:
     else:
         ret = deepcopy(_global_config)
     for key, val in kwargs.items():
-        if key in ['to', 'fr'] and val == None:
+        if key in ['to', 'fr'] and (val == None or val == ''):
             ret[key] = dict(url=None, channel=None, password=None)
         elif key == 'to':
             if isinstance(val, str):
@@ -215,7 +215,7 @@ def load_file(path: str, dest: str=None, **kwargs)-> Union[str, None]:
             url0, algorithm, hash0, size0 = _check_remote_file(path, config=config)
             if size0 == 0:
                 # This is an empty file, we handle it differently because the server has trouble
-                fname_empty = load_file(str(store_text('', algorithm=str(algorithm), store_to='local')), load_from='local')
+                fname_empty = load_file(str(store_text('', algorithm=str(algorithm), to='')), fr='')
                 if fname_empty is None:
                     raise Exception('Unexpected fname_empty is None')
                 if dest:
