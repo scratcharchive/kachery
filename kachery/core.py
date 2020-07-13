@@ -529,7 +529,7 @@ def store_dir(dirpath: str, label: Union[str, None]=None, git_annex_mode: bool=F
     if label is None:
         label = os.path.basename(dirpath)
     # X = _read_file_system_dir(dirpath, recursive=True, include_hashes=True, store_files=True, git_annex_mode=git_annex_mode, config=config)
-    X = read_dir(dirpath, recursive=True, git_annex_mode=git_annex_mode, store_file=True, config=config)
+    X = read_dir(dirpath, recursive=True, git_annex_mode=git_annex_mode, store_files=True, config=config)
     if not X:
         return None
     path1 = store_object(X, config=config)
