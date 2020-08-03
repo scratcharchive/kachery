@@ -480,7 +480,7 @@ def get_file_info(path: str, **kwargs) -> Union[dict, None]:
         else:
             return None
 
-def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=False, **kwargs) -> Union[str, None]:
+def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=False, _no_manifest: bool=False, **kwargs) -> Union[str, None]:
     if basename is None:
         basename = os.path.basename(path)
     if _is_hash_url(path):
@@ -491,15 +491,125 @@ def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=
     config = _load_config(**kwargs)
     to = config['to']
     algorithm = config['algorithm']
-    hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
+    if algorithm == 'sha1' and (not _no_manifest) and (os.path.getsize(path) > 4000000):
+        hash0, manifest0 = _compute_local_file_sha1_and_manifest(path)
+    else:
+        hash0 = _compute_local_file_hash(path, algorithm=algorithm, config=config)
+        manifest0 = None
+        
     if not hash0:
         raise Exception('Unable to compute {} hash of file: {}'.format(algorithm, path))
     if not config['to_remote_only']:
         _store_local_file_in_cache(path, algorithm=algorithm, hash=hash0, config=config)
     if (to['url'] is not None) and (not git_annex_mode):
         _upload_local_file(path, algorithm=algorithm, hash=hash0, config=config)
-    return '{}://{}/{}'.format(algorithm, hash0, basename)
+    if manifest0 is None:
+        return '{}://{}/{}'.format(algorithm, hash0, basename)
+    else:
+        manifest_uri = store_object(manifest0, _no_manifest=True)
+        assert manifest_uri is not None
+        manifest_sha1 = get_file_hash(manifest_uri)
+        return '{}://{}/{}?manifest={}'.format(algorithm, hash0, basename, manifest_sha1)
     
+def _compute_manifest_of_buf(data):
+    algorithm = 'sha1'
+    manifest = {
+        'size': 0,
+        'sha1': '',
+        'chunks': []
+    }
+    size0 = len(data)
+    chunk_size = 10000000
+    while True:
+        num_chunks = math.ceil(size0 / chunk_size)
+        if num_chunks > 100:
+            chunk_size = chunk_size * 2
+        elif num_chunks < 10:
+            chunk_size = math.ceil(chunk_size / 2)
+        else:
+            break
+    hashsum = getattr(hashlib, algorithm)()
+    pos = 0
+    while pos < size0:
+        
+        this_chunk_size = min(chunk_size, size0 - pos)
+
+        this_chunk_hashsum = getattr(hashlib, algorithm)()
+        buf = data[pos:pos + this_chunk_size]
+        this_chunk_hashsum.update(buf)
+        
+        hashsum.update(buf)
+        
+        chunk = {
+            'start': pos,
+            'end': pos + this_chunk_size,
+            'sha1': this_chunk_hashsum.hexdigest()
+        }
+        if (pos == 0) and (this_chunk_size > 10000000):
+            chunk['manifest'] = _compute_manifest_of_buf(buf)
+            store_object(chunk['manifest'], _no_manifest=True)
+        manifest['chunks'].append(chunk)
+        
+        pos = pos + this_chunk_size
+            
+    sha1 = hashsum.hexdigest()
+    manifest['sha1'] = sha1
+    manifest['size'] = size0
+    return manifest
+
+def _compute_local_file_sha1_and_manifest(path):
+    algorithm = 'sha1'
+    manifest = {
+        'size': 0,
+        'sha1': '',
+        'chunks': []
+    }
+    if not os.path.exists(path):
+        return None, None
+    size0 = os.path.getsize(path)
+    if (size0 > 1024 * 1024 * 100):
+        print('Computing {} and manifest of {}'.format(algorithm, path))
+    chunk_size = 10000000
+    while True:
+        if chunk_size <= 4000000:
+            break
+        num_chunks = math.ceil(size0 / chunk_size)
+        if num_chunks > 100:
+            chunk_size = chunk_size * 2
+        elif num_chunks < 10:
+            chunk_size = math.ceil(chunk_size / 2)
+        else:
+            break
+    hashsum = getattr(hashlib, algorithm)()
+    with open(path, 'rb') as file:
+        pos = 0
+        while pos < size0:
+            
+            this_chunk_size = min(chunk_size, size0 - pos)
+
+            this_chunk_hashsum = getattr(hashlib, algorithm)()
+            buf = file.read(this_chunk_size)
+            this_chunk_hashsum.update(buf)
+            
+            hashsum.update(buf)
+            
+            chunk = {
+                'start': pos,
+                'end': pos + this_chunk_size,
+                'sha1': this_chunk_hashsum.hexdigest()
+            }
+            if (pos == 0) and (this_chunk_size > 10000000):
+                chunk['manifest'] = _compute_manifest_of_buf(buf)
+                store_object(chunk['manifest'], _no_manifest=True)
+            manifest['chunks'].append(chunk)
+            
+            pos = pos + this_chunk_size
+            
+    sha1 = hashsum.hexdigest()
+    manifest['sha1'] = sha1
+    manifest['size'] = size0
+    return sha1, manifest
+
     
 def store_text(text: str, basename: Union[str, None]=None, **kwargs) -> Union[str, None]:
     if basename is None:
@@ -573,7 +683,7 @@ def _compute_local_file_hash(path: str, *, algorithm: str, config: dict) -> Unio
     return _hash_caches[algorithm].computeFileHash(path)
 
 def _store_local_file_in_cache(path: str, *, hash: str, algorithm: str, config: dict) -> None:
-    _, hash2 = _hash_caches[algorithm].copyFileToCache(path, use_hard_links=config['use_hard_links'])
+    _, hash2 = _hash_caches[algorithm].copyFileToCache(path, use_hard_links=config['use_hard_links'], _known_hash=hash)
     if hash2 is None:
         raise Exception('Unable to store local file in cache: {}'.format(path))
 
@@ -731,7 +841,8 @@ def _determine_file_hash_from_url(url: str, *, config: dict) -> Tuple[Union[str,
     return None, None
 
 def _parse_kachery_url(url: str) -> Tuple[str, str, str, str]:
-    list0 = url.split('/')
+    listA = url.split('?')
+    list0 = listA[0].split('/')
     protocol = list0[0].replace(':', '')
     hash0 = list0[2]
     if '.' in hash0:

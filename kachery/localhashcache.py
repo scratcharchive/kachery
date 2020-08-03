@@ -173,8 +173,11 @@ class LocalHashCache:
         return path0
 
     # @mtlogging.log()
-    def copyFileToCache(self, path: str, use_hard_links=False) -> Tuple[str, str]:
-        hash0 = self.computeFileHash(path)
+    def copyFileToCache(self, path: str, use_hard_links=False, _known_hash=None) -> Tuple[str, str]:
+        if _known_hash is not None:
+            hash0 = _known_hash
+        else:
+            hash0 = self.computeFileHash(path)
         assert hash0 is not None
         path0 = self._get_path(hash0, create=True)
         if not os.path.exists(path0):
