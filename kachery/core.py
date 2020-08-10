@@ -511,51 +511,51 @@ def store_file(path: str, basename: Union[str, None]=None, git_annex_mode: bool=
         manifest_sha1 = get_file_hash(manifest_uri)
         return '{}://{}/{}?manifest={}'.format(algorithm, hash0, basename, manifest_sha1)
     
-def _compute_manifest_of_buf(data):
-    algorithm = 'sha1'
-    manifest = {
-        'size': 0,
-        'sha1': '',
-        'chunks': []
-    }
-    size0 = len(data)
-    chunk_size = 10000000
-    while True:
-        num_chunks = math.ceil(size0 / chunk_size)
-        if num_chunks > 100:
-            chunk_size = chunk_size * 2
-        elif num_chunks < 10:
-            chunk_size = math.ceil(chunk_size / 2)
-        else:
-            break
-    hashsum = getattr(hashlib, algorithm)()
-    pos = 0
-    while pos < size0:
+# def _compute_manifest_of_buf(data):
+#     algorithm = 'sha1'
+#     manifest = {
+#         'size': 0,
+#         'sha1': '',
+#         'chunks': []
+#     }
+#     size0 = len(data)
+#     chunk_size = 10000000
+#     while True:
+#         num_chunks = math.ceil(size0 / chunk_size)
+#         if num_chunks > 100:
+#             chunk_size = chunk_size * 2
+#         elif num_chunks < 10:
+#             chunk_size = math.ceil(chunk_size / 2)
+#         else:
+#             break
+#     hashsum = getattr(hashlib, algorithm)()
+#     pos = 0
+#     while pos < size0:
         
-        this_chunk_size = min(chunk_size, size0 - pos)
+#         this_chunk_size = min(chunk_size, size0 - pos)
 
-        this_chunk_hashsum = getattr(hashlib, algorithm)()
-        buf = data[pos:pos + this_chunk_size]
-        this_chunk_hashsum.update(buf)
+#         this_chunk_hashsum = getattr(hashlib, algorithm)()
+#         buf = data[pos:pos + this_chunk_size]
+#         this_chunk_hashsum.update(buf)
         
-        hashsum.update(buf)
+#         hashsum.update(buf)
         
-        chunk = {
-            'start': pos,
-            'end': pos + this_chunk_size,
-            'sha1': this_chunk_hashsum.hexdigest()
-        }
-        if (pos == 0) and (this_chunk_size > 10000000):
-            chunk['manifest'] = _compute_manifest_of_buf(buf)
-            store_object(chunk['manifest'], _no_manifest=True)
-        manifest['chunks'].append(chunk)
+#         chunk = {
+#             'start': pos,
+#             'end': pos + this_chunk_size,
+#             'sha1': this_chunk_hashsum.hexdigest()
+#         }
+#         if (pos == 0) and (this_chunk_size > 10000000):
+#             chunk['manifest'] = _compute_manifest_of_buf(buf)
+#             store_object(chunk['manifest'], _no_manifest=True)
+#         manifest['chunks'].append(chunk)
         
-        pos = pos + this_chunk_size
+#         pos = pos + this_chunk_size
             
-    sha1 = hashsum.hexdigest()
-    manifest['sha1'] = sha1
-    manifest['size'] = size0
-    return manifest
+#     sha1 = hashsum.hexdigest()
+#     manifest['sha1'] = sha1
+#     manifest['size'] = size0
+#     return manifest
 
 def _compute_local_file_sha1_and_manifest(path):
     algorithm = 'sha1'
@@ -569,17 +569,14 @@ def _compute_local_file_sha1_and_manifest(path):
     size0 = os.path.getsize(path)
     if (size0 > 1024 * 1024 * 100):
         print('Computing {} and manifest of {}'.format(algorithm, path))
-    chunk_size = 10000000
-    while True:
-        if chunk_size <= 4000000:
-            break
-        num_chunks = math.ceil(size0 / chunk_size)
-        if num_chunks > 100:
-            chunk_size = chunk_size * 2
-        elif num_chunks < 10:
-            chunk_size = math.ceil(chunk_size / 2)
-        else:
-            break
+
+    # Determine the chunk size based on the file size
+    if size0 < 1000 * 1000 * 1000:
+        chunk_size = 10000000
+    else:
+        chunk_size = 20000000
+    # num_chunks = math.ceil(size0 / chunk_size)
+
     hashsum = getattr(hashlib, algorithm)()
     with open(path, 'rb') as file:
         pos = 0
@@ -598,9 +595,6 @@ def _compute_local_file_sha1_and_manifest(path):
                 'end': pos + this_chunk_size,
                 'sha1': this_chunk_hashsum.hexdigest()
             }
-            if (pos == 0) and (this_chunk_size > 10000000):
-                chunk['manifest'] = _compute_manifest_of_buf(buf)
-                store_object(chunk['manifest'], _no_manifest=True)
             manifest['chunks'].append(chunk)
             
             pos = pos + this_chunk_size
