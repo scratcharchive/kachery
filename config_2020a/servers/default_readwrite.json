@@ -1,6 +1,6 @@
 {
     "name": "default_readwrite",
-    "url": "http://132.249.245.245:24342",
+    "url": "http://132.249.245.246:24342",
     "default_read_channel": "neuro",
     "default_write_channel": "neuro",
     "channels": [
