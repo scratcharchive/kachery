@@ -1,12 +1,12 @@
 {
     "configurations": {
         "default_readonly": {
-            "url": "http://132.249.245.246:24342",
+            "url": "http://kachery.flatironinstitute.org/neuro1",
             "channel": "public",
             "password": "public"
         },
         "default_readwrite": {
-            "url": "http://132.249.245.246:24342",
+            "url": "http://kachery.flatironinstitute.org/neuro1",
             "channel": "neuro",
             "password": {"env": "KACHERY_DEFAULT_PASSWORD"}
         },
