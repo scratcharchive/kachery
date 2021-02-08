@@ -430,22 +430,21 @@ def get_object_hash(obj: dict):
     return _sha1_of_object(obj)
 
 def get_file_hash(path: str):
-    info = get_file_info(path, algorithm='sha1')
+    info = get_file_info(path, algorithm='sha1', hash_only=True)
     return info['sha1']
 
-def get_file_info(path: str, **kwargs) -> Union[dict, None]:
+def get_file_info(path: str, hash_only=False, **kwargs) -> Union[dict, None]:
     config = _load_config(**kwargs)
     fr = config['fr']
     if _is_hash_url(path):
         if not config['from_remote_only']:
-            fname, hash1, algorithm1 = _find_file_locally(path, config=config)
-            if fname:
-                assert hash1 is not None
+            fname, hash1, algorithm1 = _find_file_locally(path, config=config, hash_only=hash_only)
+            if hash1 is not None:
                 assert algorithm1 is not None
-                ret = dict(
-                    path=fname,
-                    size=os.path.getsize(fname)
-                )
+                ret = dict()
+                if fname is not None:
+                    ret['path'] = fname
+                    ret['size'] = os.path.getsize(fname)
                 ret[algorithm1] = hash1
                 return ret
         if fr['url'] is not None:
@@ -681,12 +680,14 @@ def _store_local_file_in_cache(path: str, *, hash: str, algorithm: str, config: 
     if hash2 is None:
         raise Exception('Unable to store local file in cache: {}'.format(path))
 
-def _find_file_locally(path: str, *, config: dict) -> Tuple[Union[str, None], Union[str, None], Union[str, None]]:
+def _find_file_locally(path: str, *, config: dict, hash_only=False) -> Tuple[Union[str, None], Union[str, None], Union[str, None]]:
     if _is_hash_url(path):
         hash0, algorithm = _determine_file_hash_from_url(path, config=config)
         if not hash0:
             return None, None, None
         assert algorithm is not None
+        if hash_only:
+            return None, hash0, algorithm
         ret = _hash_caches[algorithm].findFile(hash=hash0)
         if ret is not None:
             return ret, hash0, algorithm
