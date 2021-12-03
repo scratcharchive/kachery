@@ -1,5 +1,9 @@
 # kachery
 
+> :warning: This repo is obsolete. Instead see: https://github.com/kacheryhub/kachery-doc/blob/main/README.md
+
+# Old documentation
+
 Kachery is a Python package, command-line tool and an optional content-addressable storage server
 that lets you store files and directories in local or remote content-addressable
 storage databases. Those files may then be represented by hash URLs. Here are
@@ -22,6 +26,8 @@ we separate the representation of files from their underlying locations.
 This provides many advantages as will be seen.
 
 ## Installation
+
+> :warning: This repo is obsolete. Instead see: https://github.com/kacheryhub/kachery-doc/blob/main/README.md
 
 First, if you do not already have numpy, install it via `pip install numpy` or similar. Then,
 
@@ -50,6 +56,8 @@ export KACHERY_STORAGE_DIR=$HOME/.kachery-storage
 See the documentation below for hosting your own kachery server.
 
 ## A quick example
+
+> :warning: This repo is obsolete. Instead see: https://github.com/kacheryhub/kachery-doc/blob/main/README.md
 
 First we store some random data file in the local kachery database via the
 command-line:
@@ -91,6 +99,8 @@ Note that the `/dataset.csv` extension on the sha1:// path is for information
 purposes only and does not affect the file retrieval in any way.
 
 ## Command line
+
+> :warning: This repo is obsolete. Instead see: https://github.com/kacheryhub/kachery-doc/blob/main/README.md
 
 Basic usage examples for files:
 
@@ -171,6 +181,8 @@ kachery-info --help
 
 ## Python
 
+> :warning: This repo is obsolete. Instead see: https://github.com/kacheryhub/kachery-doc/blob/main/README.md
+
 The above operations are also accessible from Python scripts along with some crucial helper functions.
 
 ```python
@@ -224,6 +236,8 @@ txt = ka.load_text(p_text)
 ```
 
 ## Hosting a kachery server
+
+> :warning: This repo is obsolete. Instead see: https://github.com/kacheryhub/kachery-doc/blob/main/README.md
 
 To host a kachery server you will need to create a directory
 with a kachery.json configuration file inside. For an example
